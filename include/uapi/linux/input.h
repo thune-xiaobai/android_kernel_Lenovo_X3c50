@@ -413,6 +413,8 @@ struct input_keymap_entry {
 #define KEY_F23			193
 #define KEY_F24			194
 
+#define KEY_VOICE_WAKEUP	199
+
 #define KEY_PLAYCD		200
 #define KEY_PAUSECD		201
 #define KEY_PROG3		202
@@ -475,6 +477,12 @@ struct input_keymap_entry {
 #define KEY_RFKILL		247	/* Key that controls all radios */
 
 #define KEY_MICMUTE		248	/* Mute / unmute the microphone */
+
+/*[kernel,shaojc2, KLASSEN-898, add input key ],add*/
+#define KEY_FINGER_PRESENT	730	/* finger down */
+#define KEY_FINGER_VERIFIED_OK     735	/* finger verify ok*/
+#define KEY_FINGER_VERIFIED_FAILED     736	/* finger verify failed*/
+/*[kernel,shaojc2, KLASSEN-898, add input key ],end*/
 
 /* Code 255 is reserved for special needs of AT keyboard driver */
 
@@ -703,6 +711,7 @@ struct input_keymap_entry {
 #define KEY_NUMERIC_STAR	0x20a
 #define KEY_NUMERIC_POUND	0x20b
 
+#define KEY_GESTURE_WAKE        0x2fb 
 #define KEY_CAMERA_SNAPSHOT	0x2fe
 #define KEY_CAMERA_FOCUS	0x210
 #define KEY_WPS_BUTTON		0x211	/* WiFi Protected Setup key */

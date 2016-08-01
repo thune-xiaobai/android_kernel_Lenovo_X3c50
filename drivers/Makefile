@@ -139,7 +139,9 @@ obj-$(CONFIG_STAGING)		+= staging/
 obj-y				+= platform/
 #common clk code
 obj-y				+= clk/
-
+#[lenovo-fw,wangxz5,add_bootprof_log],"add bootprof log",add
+obj-y                           += bootprof/
+#[lenovo-fw,wangxz5,add_bootprof_log],end
 obj-$(CONFIG_MAILBOX)		+= mailbox/
 obj-$(CONFIG_HWSPINLOCK)	+= hwspinlock/
 obj-$(CONFIG_NFC)		+= nfc/
@@ -169,3 +171,5 @@ obj-$(CONFIG_ESOC)		+= esoc/
 obj-$(CONFIG_BIF)		+= bif/
 obj-$(CONFIG_SENSORS)		+= sensors/
 obj-$(CONFIG_SENSORS_SSC)	+= sensors/
+
+obj-m                           += bwlist/

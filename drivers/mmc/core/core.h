@@ -15,6 +15,8 @@
 
 #define MMC_CMD_RETRIES        3
 
+#define SKH_MMC_WA_CMD5        // for hynix resume coast lot fo time and emmc 5.0 has lifetime issue, so use this CMD5 to wake up
+
 struct mmc_bus_ops {
 	int (*awake)(struct mmc_host *);
 	int (*sleep)(struct mmc_host *);

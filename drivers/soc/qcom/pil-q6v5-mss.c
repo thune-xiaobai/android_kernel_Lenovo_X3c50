@@ -43,6 +43,7 @@
 
 #define subsys_to_drv(d) container_of(d, struct modem_data, subsys_desc)
 
+void mrd_update_modem_restart_reason(char *reason);
 static void log_modem_sfr(void)
 {
 	u32 size;
@@ -61,6 +62,7 @@ static void log_modem_sfr(void)
 
 	strlcpy(reason, smem_reason, min(size, MAX_SSR_REASON_LEN));
 	pr_err("modem subsystem failure reason: %s.\n", reason);
+	mrd_update_modem_restart_reason(reason);
 
 	smem_reason[0] = '\0';
 	wmb();

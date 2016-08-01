@@ -16,3 +16,7 @@ obj-$(CONFIG_SUSPEND_TIME)	+= suspend_time.o
 obj-$(CONFIG_MAGIC_SYSRQ)	+= poweroff.o
 
 obj-$(CONFIG_SUSPEND)	+= wakeup_reason.o
+# Add user defined sysfs
+obj-y += user_sysfs_private.o
+obj-y += user_sysfs_debug.o
+

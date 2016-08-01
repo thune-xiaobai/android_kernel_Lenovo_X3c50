@@ -374,7 +374,19 @@ config BACKLIGHT_LM3630
 	select REGMAP_I2C
 	help
 	  This supports TI LM3630 Backlight Driver
+#add for lenovo upgrade M
+config BACKLIGHT_LM36923
 
+	tristate "Backlight Driver for LM36923"
+	
+	depends on BACKLIGHT_CLASS_DEVICE && I2C
+	
+	select REGMAP_I2C
+	
+	help
+	
+	  This supports TI LM36923 Backlight Driver
+#end
 config BACKLIGHT_LM3639
 	tristate "Backlight Driver for LM3639"
 	depends on BACKLIGHT_CLASS_DEVICE && I2C

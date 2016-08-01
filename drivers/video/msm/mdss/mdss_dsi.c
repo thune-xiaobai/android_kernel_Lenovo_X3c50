@@ -30,7 +30,7 @@
 #include "mdss_debug.h"
 
 #define XO_CLK_RATE	19200000
-
+extern int gesture_flag;
 static struct dsi_drv_cm_data shared_ctrl_data;
 
 static int mdss_dsi_pinctrl_set_state(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
@@ -163,9 +163,14 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
-
-	ret = mdss_dsi_panel_reset(pdata, 0);
-	if (ret) {
+//add for lenovo upgrade M
+	pr_info("%s: #######\n", __func__);
+    if(gesture_flag != 1)
+    {
+        ret = mdss_dsi_panel_reset(pdata, 0);
+    }
+//end
+    if (ret) {
 		pr_warn("%s: Panel reset failed. rc=%d\n", __func__, ret);
 		ret = 0;
 	}
@@ -176,8 +181,13 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 	if (ctrl_pdata->panel_bias_vreg) {
 		pr_debug("%s: Disabling panel bias vreg. ndx = %d\n",
 		       __func__, ctrl_pdata->ndx);
-		if (mdss_dsi_labibb_vreg_ctrl(ctrl_pdata, false))
-			pr_err("Unable to disable bias vreg\n");
+//add for lenovo upgrade M
+        if(gesture_flag != 1)
+        {
+            if (mdss_dsi_labibb_vreg_ctrl(ctrl_pdata, false))
+                pr_err("Unable to disable bias vreg\n");
+        }
+//end
 		/* Add delay recommended by panel specs */
 		udelay(2000);
 	}
@@ -197,10 +207,12 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 				__func__, __mdss_dsi_pm_name(i));
 	}
 
+	pr_info("%s: ==========\n", __func__);
 end:
 	return ret;
 }
-
+//add for lenovo upgrade M
+static int first_bias_vreg=1;
 static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 {
 	int ret = 0;
@@ -214,6 +226,7 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
+	pr_info("%s: #######\n", __func__);
 
 	for (i = 0; i < DSI_MAX_PM; i++) {
 		/*
@@ -234,8 +247,23 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 	if (ctrl_pdata->panel_bias_vreg) {
 		pr_debug("%s: Enable panel bias vreg. ndx = %d\n",
 		       __func__, ctrl_pdata->ndx);
-		if (mdss_dsi_labibb_vreg_ctrl(ctrl_pdata, true))
-			pr_err("Unable to configure bias vreg\n");
+//modify for lenovo upgrade M
+        if((first_bias_vreg ==1)||(gesture_flag != 1))
+        {
+            if(first_bias_vreg == 0)
+            {
+                gpio_set_value(ctrl_pdata->rst_gpio,1);
+                usleep(3000);
+                gpio_set_value(ctrl_pdata->rst_gpio,0);
+                usleep(3000);
+                gpio_set_value(ctrl_pdata->rst_gpio,1);
+                usleep(3000);
+            }
+            first_bias_vreg = 0;
+            if (mdss_dsi_labibb_vreg_ctrl(ctrl_pdata, true))
+                pr_err("Unable to configure bias vreg\n");
+        }
+//end
 		/* Add delay recommended by panel specs */
 		udelay(2000);
 	}
@@ -259,6 +287,7 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 					__func__, ret);
 	}
 
+	pr_info("%s: ==========\n", __func__);
 error:
 	if (ret) {
 		for (; i >= 0; i--)
@@ -287,7 +316,7 @@ static int mdss_dsi_panel_power_ctrl(struct mdss_panel_data *pdata,
 	}
 
 	pinfo = &pdata->panel_info;
-	pr_debug("%s: cur_power_state=%d req_power_state=%d\n", __func__,
+	pr_info("%s: cur_power_state=%d req_power_state=%d\n", __func__,
 		pinfo->panel_power_state, power_state);
 
 	if (pinfo->panel_power_state == power_state) {
@@ -551,7 +580,7 @@ static int mdss_dsi_off(struct mdss_panel_data *pdata, int power_state)
 	mutex_lock(&ctrl_pdata->mutex);
 	panel_info = &ctrl_pdata->panel_data.panel_info;
 
-	pr_debug("%s+: ctrl=%p ndx=%d power_state=%d\n",
+	pr_info("%s+: ctrl=%p ndx=%d power_state=%d\n",
 		__func__, ctrl_pdata, ctrl_pdata->ndx, power_state);
 
 	if (power_state == panel_info->panel_power_state) {
@@ -592,7 +621,7 @@ panel_power_ctrl:
 
 end:
 	mutex_unlock(&ctrl_pdata->mutex);
-	pr_debug("%s-:\n", __func__);
+	pr_info("%s-:\n", __func__);
 
 	return ret;
 }
@@ -710,7 +739,7 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 				panel_data);
 
 	cur_power_state = pdata->panel_info.panel_power_state;
-	pr_debug("%s+: ctrl=%p ndx=%d cur_power_state=%d\n", __func__,
+	pr_info("%s+: ctrl=%p ndx=%d cur_power_state=%d\n", __func__,
 		ctrl_pdata, ctrl_pdata->ndx, cur_power_state);
 
 	pinfo = &pdata->panel_info;
@@ -790,7 +819,7 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 		mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 0);
 
 end:
-	pr_debug("%s-:\n", __func__);
+	pr_info("%s-:\n", __func__);
 	return 0;
 }
 
@@ -862,14 +891,14 @@ static int mdss_dsi_unblank(struct mdss_panel_data *pdata)
 				panel_data);
 	mipi  = &pdata->panel_info.mipi;
 
-	pr_debug("%s+: ctrl=%p ndx=%d cur_blank_state=%d ctrl_state=%x\n",
+	pr_info("%s+: ctrl=%p ndx=%d cur_blank_state=%d ctrl_state=%x\n",
 			__func__, ctrl_pdata, ctrl_pdata->ndx,
 			pdata->panel_info.blank_state, ctrl_pdata->ctrl_state);
 
 	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 1);
 
 	if (pdata->panel_info.blank_state == MDSS_PANEL_BLANK_LOW_POWER) {
-		pr_debug("%s: dsi_unblank with panel always on\n", __func__);
+		pr_info("%s: dsi_unblank with panel always on\n", __func__);
 		if (ctrl_pdata->low_power_config)
 			ret = ctrl_pdata->low_power_config(pdata, false);
 		goto error;
@@ -896,7 +925,7 @@ static int mdss_dsi_unblank(struct mdss_panel_data *pdata)
 
 error:
 	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 0);
-	pr_debug("%s-:\n", __func__);
+	pr_info("%s-:\n", __func__);
 
 	return ret;
 }
@@ -916,7 +945,7 @@ static int mdss_dsi_blank(struct mdss_panel_data *pdata, int power_state)
 				panel_data);
 	mipi = &pdata->panel_info.mipi;
 
-	pr_debug("%s+: ctrl=%p ndx=%d power_state=%d\n",
+	pr_info("%s+: ctrl=%p ndx=%d power_state=%d\n",
 		__func__, ctrl_pdata, ctrl_pdata->ndx, power_state);
 
 	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 1);
@@ -970,7 +999,7 @@ static int mdss_dsi_blank(struct mdss_panel_data *pdata, int power_state)
 
 error:
 	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 0);
-	pr_debug("%s-:End\n", __func__);
+	pr_info("%s-:End\n", __func__);
 	return ret;
 }
 
@@ -1449,7 +1478,7 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 
 	switch (event) {
 	case MDSS_EVENT_CHECK_PARAMS:
-		pr_debug("%s:Entered Case MDSS_EVENT_CHECK_PARAMS\n", __func__);
+		pr_info("%s:Entered Case MDSS_EVENT_CHECK_PARAMS\n", __func__);
 		ctrl_pdata->refresh_clk_rate = true;
 		break;
 	case MDSS_EVENT_LINK_READY:
@@ -1682,7 +1711,16 @@ end:
 
 	return dsi_pan_node;
 }
-
+//add for lenovo upgrade M
+int LCD_ID = -1;
+static int __init board_LCDID_setup(char *lcdid)
+{
+	sscanf(lcdid, "%x", &LCD_ID);
+	printk("##%s: get lcdid from lk: str: %s  to numID: %x\n", __func__, lcdid, LCD_ID);
+	return 1;
+}
+__setup("androidboot.lcdid=", board_LCDID_setup);
+//end
 static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 {
 	int rc = 0, i = 0;
@@ -1832,7 +1870,7 @@ static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 		}
 		disable_irq(gpio_to_irq(ctrl_pdata->disp_te_gpio));
 	}
-	pr_debug("%s: Dsi Ctrl->%d initialized\n", __func__, index);
+	pr_info("%s: Dsi Ctrl->%d initialized\n", __func__, index);
 	return 0;
 
 error_pan_node:
@@ -1877,7 +1915,28 @@ static int mdss_dsi_ctrl_remove(struct platform_device *pdev)
 }
 
 struct device dsi_dev;
+//add for lenovo upgrade M
+int mdss_dsi_panel_is_ready(struct mdss_dsi_ctrl_pdata *ctrl) 
+{ 
+    int ret = 1; 
+    u32 status; 
+    unsigned char *base; 
+    if(!(( 0 == LCD_ID)||(1== LCD_ID)))
+        return ret;
+    base = ctrl->ctrl_base; 
 
+    status = MIPI_INP(base + 0x0004); 
+
+    pr_err("%s status=0x%x \n", __func__, status); 
+
+    if(ctrl->panel_data.panel_info.mipi.mode == DSI_VIDEO_MODE && (status & 0x2) == 0) 
+    { 
+        ret = 0; 
+    } 
+
+    return ret; 
+} 
+//end
 int mdss_dsi_retrieve_ctrl_resources(struct platform_device *pdev, int mode,
 			struct mdss_dsi_ctrl_pdata *ctrl)
 {
@@ -1947,10 +2006,15 @@ int mdss_dsi_retrieve_ctrl_resources(struct platform_device *pdev, int mode,
 	rc = msm_dss_ioremap_byname(pdev, &ctrl->mmss_misc_io,
 		"mmss_misc_phys");
 	if (rc) {
-		pr_debug("%s:%d mmss_misc IO remap failed\n",
+		pr_err("%s:%d mmss_misc IO remap failed\n",
 			__func__, __LINE__);
 	}
-
+//add for lenovo upgrade M
+    if(mdss_dsi_panel_is_ready(ctrl) == 0)
+    { 
+        ctrl->panel_data.panel_info.cont_splash_enabled = 0; 
+    } 
+//end
 	return 0;
 }
 
@@ -2118,7 +2182,12 @@ int dsi_panel_device_register(struct device_node *pan_node,
 		"qcom,platform-bklight-en-gpio", 0);
 	if (!gpio_is_valid(ctrl_pdata->bklt_en_gpio))
 		pr_info("%s: bklt_en gpio not specified\n", __func__);
-
+//add for lenovo upgrade M
+	ctrl_pdata->bladj_en_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
+		"qcom,platform-bladj-en-gpio", 0);
+	if (!gpio_is_valid(ctrl_pdata->bladj_en_gpio))
+		pr_info("%s: bladj_en gpio not specified\n", __func__);
+//end
 	ctrl_pdata->rst_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
 			 "qcom,platform-reset-gpio", 0);
 	if (!gpio_is_valid(ctrl_pdata->rst_gpio))

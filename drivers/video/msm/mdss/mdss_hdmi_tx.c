@@ -4231,6 +4231,7 @@ static int hdmi_tx_probe(struct platform_device *pdev)
 	struct hdmi_tx_ctrl *hdmi_ctrl = NULL;
 	struct mdss_panel_cfg *pan_cfg = NULL;
 
+	return -ENODEV;
 	if (!of_node) {
 		DEV_ERR("%s: FAILED: of_node not found\n", __func__);
 		rc = -ENODEV;

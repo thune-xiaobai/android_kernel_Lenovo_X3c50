@@ -515,6 +515,9 @@ struct rq {
 	int capacity;
 	int max_possible_capacity;
 	u64 window_start;
+#ifdef CONFIG_SELFISH_TASK_MIGR
+	u64 selfish_task_window_start;
+#endif
 	int prefer_idle;
 	u32 mostly_idle_load;
 	int mostly_idle_nr_run;

@@ -66,6 +66,7 @@
 /* constants for device status */
 #define MTP_RESPONSE_OK             0x2001
 #define MTP_RESPONSE_DEVICE_BUSY    0x2019
+#define LENOVO_MS_OS_DESCRIPTOR
 
 unsigned int mtp_rx_req_len = MTP_BULK_BUFFER_SIZE;
 module_param(mtp_rx_req_len, uint, S_IRUGO | S_IWUSR);
@@ -116,6 +117,11 @@ struct mtp_dev {
 	uint16_t xfer_command;
 	uint32_t xfer_transaction_id;
 	int xfer_result;
+#ifdef LENOVO_MS_OS_DESCRIPTOR
+	char	usb_functions[32];
+	int		curr_mtp_func_index;
+	int		usb_functions_no;
+#endif
 };
 
 static struct usb_interface_descriptor mtp_interface_desc = {
@@ -303,6 +309,67 @@ static u8 mtp_os_string[] = {
 	0
 };
 
+#ifdef LENOVO_MS_OS_DESCRIPTOR
+struct mtp_ext_prop_desc_header {
+	__le32	dwLength;
+	__u16	bcdVersion;
+	__le16	wIndex;
+	__u16	wCount;
+};
+
+/* Microsoft xtended Property OS Feature Function Section */
+struct mtp_ext_prop_desc_property {
+	__le32	dwSize;
+	__le32	dwPropertyDataType;
+	__le16	wPropertyNameLength;
+	__u8	bPropertyName[8];		//MTP
+	__le32	dwPropertyDataLength;
+	__u8	bPropertyData[22];		//MTP Device
+}mtp_ext_prop_desc_property;
+
+/* MTP Extended Configuration Descriptor */
+struct {
+	struct mtp_ext_prop_desc_header	header;
+	struct mtp_ext_prop_desc_property customProp;
+} mtp_ext_prop_desc = {
+	.header = {
+		.dwLength = __constant_cpu_to_le32(sizeof(mtp_ext_prop_desc)),
+		.bcdVersion = __constant_cpu_to_le16(0x0100),
+		.wIndex = __constant_cpu_to_le16(5),
+		.wCount = __constant_cpu_to_le16(1),
+	},
+	.customProp = {
+		.dwSize = __constant_cpu_to_le32(sizeof(mtp_ext_prop_desc_property)),
+		.dwPropertyDataType = __constant_cpu_to_le32(1),
+		.wPropertyNameLength = __constant_cpu_to_le16(8),
+		.bPropertyName = {'M', 0, 'T', 0, 'P', 0, 0, 0},		//MTP
+		.dwPropertyDataLength = __constant_cpu_to_le32(22),
+		.bPropertyData = {'M', 0, 'T', 0, 'P', 0, ' ', 0, 'D', 0, 'e', 0, 'v', 0, 'i', 0, 'c', 0, 'e', 0, 0, 0},		//MTP Device
+	},
+};
+
+#define USB_MTP			"mtp\n"
+#define USB_MTP_ACM		"mtp,acm\n"
+#define USB_MTP_ADB		"mtp,adb\n"
+#define USB_MTP_ADB_ACM	"mtp,adb,acm\n"
+#define USB_MTP_ADB_UMS "mtp,adb,mass_storage\n"
+#define USB_MTP_UMS		"mtp,mass_storage\n"
+#define USB_MTP_UMS_ADB	"mtp,mass_storage,ffs\n"
+
+
+static char * USB_MTP_FUNC[] =
+{
+	USB_MTP,
+	USB_MTP_ACM,
+	USB_MTP_ADB,
+	USB_MTP_ADB_ACM,
+	USB_MTP_UMS,
+	USB_MTP_UMS_ADB,
+    USB_MTP_ADB_UMS,
+    NULL
+};
+#endif //LENOVO_MS_OS_DESCRIPTOR
+
 /* Microsoft Extended Configuration Descriptor Header Section */
 struct mtp_ext_config_desc_header {
 	__le32	dwLength;
@@ -321,6 +388,45 @@ struct mtp_ext_config_desc_function {
 	__u8	reserved[6];
 };
 
+#ifdef LENOVO_MS_OS_DESCRIPTOR
+struct {
+	struct mtp_ext_config_desc_header	header;
+	struct mtp_ext_config_desc_function    function[3];
+} mtp_ext_config_desc = {
+	.header = {
+		.dwLength = __constant_cpu_to_le32(sizeof(mtp_ext_config_desc)),
+		.bcdVersion = __constant_cpu_to_le16(0x0100),
+		.wIndex = __constant_cpu_to_le16(4),
+		//.bCount = __constant_cpu_to_le16(1),
+		.bCount = 0x03,
+		.reserved = { 0 },
+	},
+	.function[0] =
+	{
+	.bFirstInterfaceNumber = 0,
+	.bInterfaceCount = 1,
+	.compatibleID = { 'M', 'T', 'P', 0, 0, 0, 0, 0 },
+	.subCompatibleID = { 0 },
+	.reserved = { 0 },
+	},
+	.function[1] =
+	{
+	.bFirstInterfaceNumber = 1,
+	.bInterfaceCount = 1,
+	.compatibleID = { 0 },
+	.subCompatibleID = { 0 },
+	.reserved = { 0 },
+	},
+	.function[2] =
+	{
+	.bFirstInterfaceNumber = 2,
+	.bInterfaceCount = 1,
+	.compatibleID = { 0 },
+	.subCompatibleID = { 0 },
+	.reserved = { 0 },
+	},
+};
+#else
 /* MTP Extended Configuration Descriptor */
 struct {
 	struct mtp_ext_config_desc_header	header;
@@ -338,6 +444,7 @@ struct {
 		.compatibleID = { 'M', 'T', 'P' },
 	},
 };
+#endif //LENOVO_MS_OS_DESCRIPTOR
 
 struct mtp_device_status {
 	__le16	wLength;
@@ -1165,12 +1272,14 @@ fail:
 }
 #endif
 
+bool has_mtp = false;
 static int mtp_open(struct inode *ip, struct file *fp)
 {
 	printk(KERN_INFO "mtp_open\n");
 	if (mtp_lock(&_mtp_dev->open_excl))
 		return -EBUSY;
 
+	has_mtp = true;
 	/* clear any error condition */
 	if (_mtp_dev->state != STATE_OFFLINE)
 		_mtp_dev->state = STATE_READY;
@@ -1183,6 +1292,7 @@ static int mtp_release(struct inode *ip, struct file *fp)
 {
 	printk(KERN_INFO "mtp_release\n");
 
+	has_mtp = false;
 	mtp_unlock(&_mtp_dev->open_excl);
 	return 0;
 }
@@ -1205,6 +1315,27 @@ static struct miscdevice mtp_device = {
 	.name = mtp_shortname,
 	.fops = &mtp_fops,
 };
+
+#ifdef LENOVO_MS_OS_DESCRIPTOR
+static void mtp_read_usb_functions(int functions_no, char * buff)
+{
+	struct mtp_dev *dev = _mtp_dev;
+	int i;
+
+	dev->usb_functions_no = functions_no;
+	dev->curr_mtp_func_index = 0xff;
+	memcpy(dev->usb_functions, buff, sizeof(dev->usb_functions));
+
+	for(i = 0; USB_MTP_FUNC[i]; i++)
+	{
+		if(!strcmp(dev->usb_functions, USB_MTP_FUNC[i]))
+		{
+			dev->curr_mtp_func_index = i;
+			break;
+		}
+	}
+}
+#endif //LENOVO_MS_OS_DESCRIPTOR
 
 static int mtp_ctrlrequest(struct usb_composite_dev *cdev,
 				const struct usb_ctrlrequest *ctrl)
@@ -1235,6 +1366,58 @@ static int mtp_ctrlrequest(struct usb_composite_dev *cdev,
 		DBG(cdev, "vendor request: %d index: %d value: %d length: %d\n",
 			ctrl->bRequest, w_index, w_value, w_length);
 
+#ifdef LENOVO_MS_OS_DESCRIPTOR
+		if (ctrl->bRequest == 1
+				&& (ctrl->bRequestType & USB_DIR_IN)
+				&& (w_index == 5)) {
+			value = (w_length < sizeof(mtp_ext_prop_desc) ?
+					w_length : sizeof(mtp_ext_prop_desc));
+			memcpy(cdev->req->buf, &mtp_ext_prop_desc, value);
+		}
+		else if (ctrl->bRequest == 1
+				&& (ctrl->bRequestType & USB_DIR_IN)
+				&& (w_index == 4)) {
+            unsigned desc_size = 0;
+			switch(dev->curr_mtp_func_index)
+			{
+			case 0:			//mtp
+                desc_size = sizeof(mtp_ext_config_desc) - 2 * sizeof(struct mtp_ext_config_desc_function);
+                mtp_ext_config_desc.header.dwLength = desc_size;
+                mtp_ext_config_desc.header.bCount = 1;
+				value = (w_length < desc_size ? w_length : desc_size);
+				memcpy(cdev->req->buf, &mtp_ext_config_desc, value);
+				break;
+			case 1:			//mtp,acm	, with acm, failed so far
+			case 2:			//mtp,adb 
+			case 4:			//mtp,mass_storage
+                desc_size = sizeof(mtp_ext_config_desc) - sizeof(struct mtp_ext_config_desc_function);
+                mtp_ext_config_desc.header.dwLength = cpu_to_le32(desc_size);
+                mtp_ext_config_desc.header.bCount = 2;
+				value = (w_length < desc_size ? w_length : desc_size);
+                memcpy(cdev->req->buf, &mtp_ext_config_desc, value);
+				break;
+			case 3:			//mtp,adb,acm	, with acm, failed so far
+			case 5:			//mtp,mass_storage,adb
+            case 6:         //mtp,adb,mass_storage
+                desc_size = sizeof(mtp_ext_config_desc);
+                mtp_ext_config_desc.header.dwLength = cpu_to_le32(desc_size);
+                mtp_ext_config_desc.header.bCount = 3;
+				value = (w_length < desc_size ? w_length : desc_size);
+				memcpy(cdev->req->buf, &mtp_ext_config_desc, value);
+				break;
+			default:			//unknown, 0xff
+                desc_size = sizeof(mtp_ext_config_desc) - 2 * sizeof(struct mtp_ext_config_desc_function);
+                mtp_ext_config_desc.header.dwLength = cpu_to_le32(desc_size);
+                mtp_ext_config_desc.header.bCount = 1;
+				value = (w_length < desc_size ? w_length : desc_size);
+				memcpy(cdev->req->buf, &mtp_ext_config_desc, value);
+				break;
+			}
+ 
+		}
+#else
+		mtp_ext_config_desc.function.bFirstInterfaceNumber = mtp_interface_desc.bInterfaceNumber;
+
 		if (ctrl->bRequest == 1
 				&& (ctrl->bRequestType & USB_DIR_IN)
 				&& (w_index == 4 || w_index == 5)) {
@@ -1242,6 +1425,8 @@ static int mtp_ctrlrequest(struct usb_composite_dev *cdev,
 					w_length : sizeof(mtp_ext_config_desc));
 			memcpy(cdev->req->buf, &mtp_ext_config_desc, value);
 		}
+#endif //LENOVO_MS_OS_DESCRIPTOR
+
 	} else if ((ctrl->bRequestType & USB_TYPE_MASK) == USB_TYPE_CLASS) {
 		DBG(cdev, "class request: %d index: %d value: %d length: %d\n",
 			ctrl->bRequest, w_index, w_value, w_length);

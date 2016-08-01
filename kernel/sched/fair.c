@@ -1263,7 +1263,7 @@ static inline unsigned int task_load(struct task_struct *p)
 {
 	if (sched_use_pelt)
 		return p->se.avg.runnable_avg_sum_scaled;
-
+	
 	return p->ravg.demand;
 }
 
@@ -2771,6 +2771,10 @@ static inline int migration_needed(struct rq *rq, struct task_struct *p)
 			 rq->capacity > min_capacity)
 		return DOWN_MIGRATION;
 
+#ifdef CONFIG_SELFISH_TASK_MIGR
+	if (p->task_need_down_migrate && rq->capacity == max_capacity)
+		return DOWN_MIGRATION;
+#endif
 	if (!task_will_fit(p, cpu_of(rq)))
 		return UP_MIGRATION;
 
@@ -4856,7 +4860,6 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 			break;
 		cfs_rq = cfs_rq_of(se);
 		enqueue_entity(cfs_rq, se, flags);
-
 		/*
 		 * end evaluation on encountering a throttled cfs_rq
 		 *

@@ -217,6 +217,9 @@ enum sdc_mpm_pin_state {
 /* Timeout value to avoid infinite waiting for pwr_irq */
 #define MSM_PWR_IRQ_TIMEOUT_MS 5000
 
+#define X3_USE_QUIRK_TIMEOUT_VAL
+#define X3_DUMP_AUTO_CMD23
+
 static const u32 tuning_block_64[] = {
 	0x00FF0FFF, 0xCCC3CCFF, 0xFFCC3CC3, 0xEFFEFFFE,
 	0xDDFFDFFF, 0xFBFFFBFF, 0xFF7FFFBF, 0xEFBDF777,
@@ -2993,6 +2996,16 @@ void sdhci_msm_dump_vendor_regs(struct sdhci_host *host)
 		readl_relaxed(host->ioaddr + CORE_VENDOR_SPEC_ADMA_ERR_ADDR0),
 		readl_relaxed(host->ioaddr + CORE_VENDOR_SPEC_ADMA_ERR_ADDR1));
 
+#ifdef X3_DUMP_AUTO_CMD23
+    if((host->version >= SDHCI_SPEC_300) &&
+       ((host->flags & SDHCI_USE_ADMA) || !(host->flags & SDHCI_USE_SDMA))) {
+        host->flags |= SDHCI_AUTO_CMD23;
+        printk("%s: %s Auto-CMD23 available\n", __func__, mmc_hostname(host->mmc));
+    }
+    else {
+        printk("%s: %s Auto-CMD23 unavailable\n", __func__, mmc_hostname(host->mmc));
+    }
+#endif
 	/*
 	 * tbsel indicates [2:0] bits and tbsel2 indicates [7:4] bits
 	 * of CORE_TESTBUS_CONFIG register.
@@ -3406,6 +3419,9 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	host->quirks2 |= SDHCI_QUIRK2_IGNORE_DATATOUT_FOR_R1BCMD;
 	host->quirks2 |= SDHCI_QUIRK2_BROKEN_PRESET_VALUE;
 	host->quirks2 |= SDHCI_QUIRK2_USE_RESERVED_MAX_TIMEOUT;
+#ifdef X3_USE_QUIRK_TIMEOUT_VAL
+    host->quirks |= SDHCI_QUIRK_BROKEN_TIMEOUT_VAL;
+#endif
 
 	if (host->quirks2 & SDHCI_QUIRK2_ALWAYS_USE_BASE_CLOCK)
 		host->quirks2 |= SDHCI_QUIRK2_DIVIDE_TOUT_BY_4;

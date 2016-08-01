@@ -50,6 +50,7 @@
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/printk.h>
+#include <asm/le_rkm.h>
 
 #ifdef CONFIG_EARLY_PRINTK_DIRECT
 extern void printascii(char *);
@@ -258,7 +259,12 @@ static u32 clear_idx;
 #define LOG_ALIGN __alignof__(struct log)
 #endif
 #define __LOG_BUF_LEN (1 << CONFIG_LOG_BUF_SHIFT)
+#ifdef CONFIG_LENOVO_DEBUG_MRD
+char __log_buf[__LOG_BUF_LEN] __aligned(LOG_ALIGN);
+#else
 static char __log_buf[__LOG_BUF_LEN] __aligned(LOG_ALIGN);
+#endif
+
 static char *log_buf = __log_buf;
 static u32 log_buf_len = __LOG_BUF_LEN;
 
@@ -912,7 +918,12 @@ void __init setup_log_buf(int early)
 	int free;
 
 	if (!new_log_buf_len)
+	{
+#ifdef CONFIG_LENOVO_DEBUG_RKM
+		rkm_init_log_buf_header(__log_buf,log_buf_len,(char*)&log_first_idx,(char*)&log_next_idx,sizeof(struct log));
+#endif
 		return;
+	}
 
 	if (early) {
 		unsigned long mem;
@@ -1410,6 +1421,63 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 	return len;
 }
 
+#ifdef CONFIG_LENOVO_DEBUG_RKM
+int kernel_log_buf_text_parser(char *kernel_log_buf, char *text_buf, int size)
+{
+#if 0
+	char *parser_text_buf;
+	char *buf = text_buf;
+	int total_size = size;
+	struct log *msg;
+	int len = 0;
+	int log_idx = 0;
+	enum log_flags log_prev = LOG_NOCONS;
+
+	if((kernel_log_buf == NULL) || (text_buf == NULL))
+	{
+		return -EINVAL;
+	}
+
+	parser_text_buf = kmalloc(LOG_LINE_MAX + PREFIX_MAX, GFP_KERNEL);
+	if (!parser_text_buf)
+		return -ENOMEM;
+
+	while (size > 0) {
+		size_t n;
+
+		msg = (struct log *)(kernel_log_buf + log_idx);
+		/*
+		 * A length == 0 record is the end of buffer marker. Wrap around and
+		 * read the message at the start of the buffer.
+		 */
+		if (!msg->len)
+			break;
+
+		n = msg_print_text(msg, log_prev, false, parser_text_buf,
+				LOG_LINE_MAX + PREFIX_MAX);
+
+		if ((len+n) >= total_size)
+			break;
+
+		log_prev = msg->flags;
+
+		log_idx = log_idx + msg->len;
+
+		memcpy(buf, parser_text_buf, n);
+
+		len += n;
+		size -= n;
+		buf += n;
+	}
+
+	kfree(parser_text_buf);
+	return len;
+#else
+	return 0;
+#endif
+}
+#endif
+
 int do_syslog(int type, char __user *buf, int len, bool from_file)
 {
 	bool clear = false;
@@ -1781,6 +1849,9 @@ static size_t cont_print_text(char *text, size_t size)
 	return textlen;
 }
 
+/* yangjq, 2012-11-13, For amss_printk, START */
+extern int smem_dmesg_get_message(char *message, int len);
+/* yangjq, 2012-11-13, For amss_printk, END */
 asmlinkage int vprintk_emit(int facility, int level,
 			    const char *dict, size_t dictlen,
 			    const char *fmt, va_list args)
@@ -1839,6 +1910,13 @@ asmlinkage int vprintk_emit(int facility, int level,
 	 * prefix which might be passed-in as a parameter.
 	 */
 	text_len = vscnprintf(text, sizeof(textbuf), fmt, args);
+       /* yangjq, 2012-11-13, For amss_printk, START */
+#if 0
+	/* Emit the amss_printk output into the temporary buffer */
+	text_len += smem_dmesg_get_message(textbuf + text_len,
+		sizeof(textbuf) - text_len);
+#endif /* 0 */
+       /* yangjq, 2012-11-13, For amss_printk, END */
 
 	/* mark and strip a trailing newline */
 	if (text_len && text[text_len-1] == '\n') {

@@ -428,6 +428,11 @@ static int dwc3_otg_set_power(struct usb_phy *phy, unsigned mA)
 
 skip_psy_type:
 
+	if (dotg->charger->chg_type == DWC3_FLOATED_CHARGER){
+		power_supply_type = POWER_SUPPLY_TYPE_USB_DCP;
+		power_supply_set_supply_type(dotg->psy, power_supply_type);
+	}
+
 	if (dotg->charger->chg_type == DWC3_CDP_CHARGER)
 		mA = DWC3_IDEV_CHG_MAX;
 
@@ -489,7 +494,7 @@ void dwc3_otg_init_sm(struct dwc3_otg *dotg)
 	if (dwc->vbus_active)
 		set_bit(B_SESS_VLD, &dotg->inputs);
 }
-
+extern int set_float_chg(bool en);
 /**
  * dwc3_otg_sm_work - workqueue function.
  *
@@ -556,6 +561,7 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 		} else if (test_bit(B_SESS_VLD, &dotg->inputs)) {
 			dev_dbg(phy->dev, "b_sess_vld\n");
 			if (charger) {
+				dev_info(phy->dev, "chg_type = %d\n",charger->chg_type);
 				/* Has charger been detected? If no detect it */
 				switch (charger->chg_type) {
 				case DWC3_DCP_CHARGER:
@@ -595,9 +601,11 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 					 */
 					if (dotg->charger_retry_count ==
 						max_chgr_retry_count) {
-						dwc3_otg_set_power(phy, 0);
+						dwc3_otg_set_power(phy, DWC3_IDEV_CHG_MAX);
 						dbg_event(0xFF, "FLCHG put", 0);
 						pm_runtime_put_sync(phy->dev);
+						set_float_chg(true);
+
 						break;
 					}
 					charger->start_detection(dotg->charger,

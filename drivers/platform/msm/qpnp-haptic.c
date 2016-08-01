@@ -148,6 +148,10 @@
 
 #define LRA_POS_FREQ_COUNT		6
 int lra_play_rate_code[LRA_POS_FREQ_COUNT];
+static int time_diff;
+
+#define X3_SHORT_VIBRATE
+#define X3_SHORT_VIBRATE_DEBUG
 
 /* haptic debug register set */
 static u8 qpnp_hap_dbg_regs[] = {
@@ -301,6 +305,11 @@ struct qpnp_hap {
 	u32 play_irq;
 	u32 sc_irq;
 	u16 base;
+#ifdef X3_SHORT_VIBRATE
+	u16 long_pat_cnt;
+	u8 last_samp_cnt;
+	u8 wave_samp_pat1[QPNP_HAP_WAV_SAMP_LEN];
+#endif
 	u8 act_type;
 	u8 wave_shape;
 	u8 wave_samp[QPNP_HAP_WAV_SAMP_LEN];
@@ -388,10 +397,17 @@ static int qpnp_hap_mod_enable(struct qpnp_hap *hap, int on)
 
 			/* wait for QPNP_HAP_CYCLS cycles of play rate */
 			if (val & QPNP_HAP_STATUS_BUSY) {
+#ifdef X3_SHORT_VIBRATE
+				if (hap->play_mode == QPNP_HAP_DIRECT ||
+					hap->play_mode == QPNP_HAP_PWM)
+					break;
+				usleep_range(sleep_time, sleep_time + 1);
+#else
 				usleep_range(sleep_time, sleep_time + 1);
 				if (hap->play_mode == QPNP_HAP_DIRECT ||
 					hap->play_mode == QPNP_HAP_PWM)
 					break;
+#endif
 			} else
 				break;
 		}
@@ -468,6 +484,37 @@ static irqreturn_t qpnp_hap_play_irq(int irq, void *_hap)
 	mutex_lock(&hap->wf_lock);
 
 	/* Configure WAVE_SAMPLE1 to WAVE_SAMPLE8 register */
+#ifdef X3_SHORT_VIBRATE
+	if (hap->wf_update) {
+		if(hap->long_pat_cnt > 0) {
+			for(i=0; i<QPNP_HAP_WAV_SAMP_LEN; i++) {
+				reg = hap->wave_samp_pat1[QPNP_HAP_WAV_SAMP_LEN-1];
+				rc = qpnp_hap_write_reg(hap, &reg,
+							QPNP_HAP_WAV_S_REG_BASE(hap->base) + i);
+				if (rc)
+					goto unlock;
+			}
+			hap->long_pat_cnt--;
+		}
+		else {
+			for(i=0; i<hap->last_samp_cnt; i++) {
+				reg = hap->wave_samp_pat1[QPNP_HAP_WAV_SAMP_LEN-1];
+				rc = qpnp_hap_write_reg(hap, &reg,
+							QPNP_HAP_WAV_S_REG_BASE(hap->base) + i);
+				if (rc)
+					goto unlock;
+			}
+			for(; i<QPNP_HAP_WAV_SAMP_LEN; i++){
+				reg = 0x00;
+				rc = qpnp_hap_write_reg(hap, &reg,
+							QPNP_HAP_WAV_S_REG_BASE(hap->base) + i);
+				if (rc)
+					goto unlock;
+			}
+			hap->wf_update = false;
+		}
+	}
+#else
 	for (i = 0; i < QPNP_HAP_WAV_SAMP_LEN && hap->wf_update; i++) {
 		reg = hap->wave_samp[i] = hap->shadow_wave_samp[i];
 		rc = qpnp_hap_write_reg(hap, &reg,
@@ -476,6 +523,7 @@ static irqreturn_t qpnp_hap_play_irq(int irq, void *_hap)
 			goto unlock;
 	}
 	hap->wf_update = false;
+#endif
 
 unlock:
 	mutex_unlock(&hap->wf_lock);
@@ -501,7 +549,11 @@ static irqreturn_t qpnp_hap_sc_irq(int irq, void *_hap)
 static int qpnp_hap_buffer_config(struct qpnp_hap *hap)
 {
 	u8 reg = 0;
-	int rc, i, temp;
+	int rc, temp;
+#ifdef X3_SHORT_VIBRATE
+#else
+	int i;
+#endif
 
 	/* Configure the WAVE_REPEAT register */
 	if (hap->wave_rep_cnt < QPNP_HAP_WAV_REP_MIN)
@@ -529,6 +581,8 @@ static int qpnp_hap_buffer_config(struct qpnp_hap *hap)
 	if (rc)
 		return rc;
 
+#ifdef X3_SHORT_VIBRATE
+#else
 	/* Configure WAVE_SAMPLE1 to WAVE_SAMPLE8 register */
 	for (i = 0, reg = 0; i < QPNP_HAP_WAV_SAMP_LEN; i++) {
 		reg = hap->wave_samp[i];
@@ -537,6 +591,7 @@ static int qpnp_hap_buffer_config(struct qpnp_hap *hap)
 		if (rc)
 			return rc;
 	}
+#endif
 
 	/* setup play irq */
 	if (hap->use_play_irq) {
@@ -657,7 +712,7 @@ static int qpnp_hap_vmax_config(struct qpnp_hap *hap)
 		hap->vmax_mv = QPNP_HAP_VMAX_MIN_MV;
 	else if (hap->vmax_mv > QPNP_HAP_VMAX_MAX_MV)
 		hap->vmax_mv = QPNP_HAP_VMAX_MAX_MV;
-
+	printk("%s: vamax is %d\n",__func__, hap->vmax_mv);
 	rc = qpnp_hap_read_reg(hap, &reg, QPNP_HAP_VMAX_REG(hap->base));
 	if (rc < 0)
 		return rc;
@@ -732,7 +787,12 @@ static int qpnp_hap_parse_buffer_dt(struct qpnp_hap *hap)
 		for (i = 0; i < QPNP_HAP_WAV_SAMP_LEN; i++)
 			hap->wave_samp[i] = QPNP_HAP_WAV_SAMP_MAX;
 	} else {
+#ifdef X3_SHORT_VIBRATE
+		memcpy(hap->wave_samp_pat1, prop->value, QPNP_HAP_WAV_SAMP_LEN);
+#else
 		memcpy(hap->wave_samp, prop->value, QPNP_HAP_WAV_SAMP_LEN);
+		memcpy(hap->shadow_wave_samp, prop->value, QPNP_HAP_WAV_SAMP_LEN);
+#endif
 	}
 
 	hap->use_play_irq = of_property_read_bool(spmi->dev.of_node,
@@ -818,9 +878,31 @@ static ssize_t qpnp_hap_wf_samp_show(struct device *dev, char *buf, int index)
 		return -EINVAL;
 	}
 
+#ifdef X3_SHORT_VIBRATE
+	return snprintf(buf, PAGE_SIZE, "0x%x\n",
+			hap->wave_samp_pat1[index]);
+#else
 	return snprintf(buf, PAGE_SIZE, "0x%x\n",
 			hap->shadow_wave_samp[index]);
+#endif
 }
+
+#ifdef X3_SHORT_VIBRATE
+static ssize_t qpnp_hap_wf_samp_pat1_show(struct device *dev, char *buf, int index)
+{
+	struct timed_output_dev *timed_dev = dev_get_drvdata(dev);
+	struct qpnp_hap *hap = container_of(timed_dev, struct qpnp_hap,
+					 timed_dev);
+
+	if (index < 0 || index >= QPNP_HAP_WAV_SAMP_LEN) {
+		dev_err(dev, "Invalid sample pattern 1 index(%d)\n", index);
+		return -EINVAL;
+	}
+
+	return snprintf(buf, PAGE_SIZE, "0x%x\n",
+			hap->wave_samp_pat1[index]);
+}
+#endif
 
 static ssize_t qpnp_hap_wf_s0_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -870,6 +952,94 @@ static ssize_t qpnp_hap_wf_s7_show(struct device *dev,
 	return qpnp_hap_wf_samp_show(dev, buf, 7);
 }
 
+#ifdef X3_SHORT_VIBRATE
+static ssize_t qpnp_hap_wf_pat1_s0_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return qpnp_hap_wf_samp_pat1_show(dev, buf, 0);
+}
+
+static ssize_t qpnp_hap_wf_pat1_s1_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return qpnp_hap_wf_samp_pat1_show(dev, buf, 1);
+}
+
+static ssize_t qpnp_hap_wf_pat1_s2_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return qpnp_hap_wf_samp_pat1_show(dev, buf, 2);
+}
+
+static ssize_t qpnp_hap_wf_pat1_s3_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return qpnp_hap_wf_samp_pat1_show(dev, buf, 3);
+}
+
+static ssize_t qpnp_hap_wf_pat1_s4_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return qpnp_hap_wf_samp_pat1_show(dev, buf, 4);
+}
+
+static ssize_t qpnp_hap_wf_pat1_s5_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return qpnp_hap_wf_samp_pat1_show(dev, buf, 5);
+}
+
+static ssize_t qpnp_hap_wf_pat1_s6_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return qpnp_hap_wf_samp_pat1_show(dev, buf, 6);
+}
+
+static ssize_t qpnp_hap_wf_pat1_s7_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return qpnp_hap_wf_samp_pat1_show(dev, buf, 7);
+}
+#endif
+
+static ssize_t qpnp_hap_wf_brake_show(struct device *dev, char *buf, int index)
+{
+	struct timed_output_dev *timed_dev = dev_get_drvdata(dev);
+	struct qpnp_hap *hap = container_of(timed_dev, struct qpnp_hap,
+					 timed_dev);
+
+	if (index < 0 || index >= QPNP_HAP_BRAKE_PAT_LEN) {
+		dev_err(dev, "Invalid brake index(%d)\n", index);
+		return -EINVAL;
+	}
+
+	return snprintf(buf, PAGE_SIZE, "0x%x\n",
+			hap->brake_pat[index]);
+}
+static ssize_t qpnp_hap_wf_brake0_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return qpnp_hap_wf_brake_show(dev, buf, 0);
+}
+
+static ssize_t qpnp_hap_wf_brake1_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return qpnp_hap_wf_brake_show(dev, buf, 1);
+}
+
+static ssize_t qpnp_hap_wf_brake2_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return qpnp_hap_wf_brake_show(dev, buf, 2);
+}
+
+static ssize_t qpnp_hap_wf_brake3_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return qpnp_hap_wf_brake_show(dev, buf, 3);
+}
+
 /* sysfs store for wave samples */
 static ssize_t qpnp_hap_wf_samp_store(struct device *dev,
 		const char *buf, size_t count, int index)
@@ -892,7 +1062,11 @@ static ssize_t qpnp_hap_wf_samp_store(struct device *dev,
 		return -EINVAL;
 	}
 
+#ifdef X3_SHORT_VIBRATE
+	hap->wave_samp_pat1[index] = (u8) data;
+#else
 	hap->shadow_wave_samp[index] = (u8) data;
+#endif
 	return count;
 }
 
@@ -944,6 +1118,126 @@ static ssize_t qpnp_hap_wf_s7_store(struct device *dev,
 	return qpnp_hap_wf_samp_store(dev, buf, count, 7);
 }
 
+#ifdef X3_SHORT_VIBRATE
+/* sysfs store for wave samples pattern1 */
+static ssize_t qpnp_hap_wf_samp_pat1_store(struct device *dev,
+		const char *buf, size_t count, int index)
+{
+	struct timed_output_dev *timed_dev = dev_get_drvdata(dev);
+	struct qpnp_hap *hap = container_of(timed_dev, struct qpnp_hap,
+					 timed_dev);
+	int data;
+
+	if (index < 0 || index >= QPNP_HAP_WAV_SAMP_LEN) {
+		dev_err(dev, "Invalid sample pattern1 index(%d)\n", index);
+		return -EINVAL;
+	}
+
+	if (sscanf(buf, "%x", &data) != 1)
+		return -EINVAL;
+
+	if (data < 0 || data > 0xff) {
+		dev_err(dev, "Invalid sample pattern1 wf_%d (%d)\n", index, data);
+		return -EINVAL;
+	}
+
+	hap->wave_samp_pat1[index] = (u8) data;
+	return count;
+}
+
+static ssize_t qpnp_hap_wf_pat1_s0_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	return qpnp_hap_wf_samp_pat1_store(dev, buf, count, 0);
+}
+
+static ssize_t qpnp_hap_wf_pat1_s1_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	return qpnp_hap_wf_samp_pat1_store(dev, buf, count, 1);
+}
+
+static ssize_t qpnp_hap_wf_pat1_s2_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	return qpnp_hap_wf_samp_pat1_store(dev, buf, count, 2);
+}
+
+static ssize_t qpnp_hap_wf_pat1_s3_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	return qpnp_hap_wf_samp_pat1_store(dev, buf, count, 3);
+}
+
+static ssize_t qpnp_hap_wf_pat1_s4_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	return qpnp_hap_wf_samp_pat1_store(dev, buf, count, 4);
+}
+
+static ssize_t qpnp_hap_wf_pat1_s5_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	return qpnp_hap_wf_samp_pat1_store(dev, buf, count, 5);
+}
+
+static ssize_t qpnp_hap_wf_pat1_s6_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	return qpnp_hap_wf_samp_pat1_store(dev, buf, count, 6);
+}
+
+static ssize_t qpnp_hap_wf_pat1_s7_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	return qpnp_hap_wf_samp_pat1_store(dev, buf, count, 7);
+}
+#endif
+
+static ssize_t qpnp_hap_wf_brake_store(struct device *dev,
+		const char *buf, size_t count, int index)
+{
+	struct timed_output_dev *timed_dev = dev_get_drvdata(dev);
+	struct qpnp_hap *hap = container_of(timed_dev, struct qpnp_hap,
+					 timed_dev);
+	int data;
+
+	if (index < 0 || index >=QPNP_HAP_BRAKE_PAT_LEN ) {
+		dev_err(dev, "Invalid sample index(%d)\n", index);
+		return -EINVAL;
+	}
+
+	if (sscanf(buf, "%x", &data) != 1)
+		return -EINVAL;
+
+	if (data < 0 || data > 0xff) {
+		dev_err(dev, "Invalid sample wf_%d (%d)\n", index, data);
+		return -EINVAL;
+	}
+
+	hap->brake_pat[index] = (u8) data;
+	return count;
+}
+static ssize_t qpnp_hap_wf_brake0_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	return qpnp_hap_wf_brake_store(dev, buf, count, 0);
+}
+static ssize_t qpnp_hap_wf_brake1_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	return qpnp_hap_wf_brake_store(dev, buf, count, 1);
+}
+static ssize_t qpnp_hap_wf_brake2_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	return qpnp_hap_wf_brake_store(dev, buf, count, 2);
+}
+static ssize_t qpnp_hap_wf_brake3_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	return qpnp_hap_wf_brake_store(dev, buf, count, 3);
+}
 /* sysfs show for wave form update */
 static ssize_t qpnp_hap_wf_update_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -966,6 +1260,37 @@ static ssize_t qpnp_hap_wf_update_store(struct device *dev,
 	mutex_lock(&hap->wf_lock);
 	hap->wf_update = true;
 	mutex_unlock(&hap->wf_lock);
+
+	return count;
+}
+static ssize_t qpnp_hap_brake_update_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct timed_output_dev *timed_dev = dev_get_drvdata(dev);
+	struct qpnp_hap *hap = container_of(timed_dev, struct qpnp_hap,
+					 timed_dev);
+	int i,rc,temp;
+	u8 reg;
+	rc = qpnp_hap_read_reg(hap, &reg, QPNP_HAP_EN_CTL2_REG(hap->base));
+	if (rc < 0)
+		return rc;
+	reg &= QPNP_HAP_BRAKE_MASK;
+	reg |= hap->en_brake;
+	rc = qpnp_hap_write_reg(hap, &reg, QPNP_HAP_EN_CTL2_REG(hap->base));
+	if (rc)
+		return rc;
+	if (hap->en_brake && hap->sup_brake_pat) {
+		for (i = QPNP_HAP_BRAKE_PAT_LEN - 1, reg = 0; i >= 0; i--) {
+			hap->brake_pat[i] &= QPNP_HAP_BRAKE_PAT_MASK;
+			temp = i << 1;
+			reg |= hap->brake_pat[i] << temp;
+		}
+		rc = qpnp_hap_write_reg(hap, &reg,
+					QPNP_HAP_BRAKE_REG(hap->base));
+		if (rc)
+			return rc;
+	}
+
 
 	return count;
 }
@@ -1155,6 +1480,82 @@ static ssize_t qpnp_hap_play_mode_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%s\n", str);
 }
 
+static ssize_t qpnp_hap_vmax_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct timed_output_dev *timed_dev = dev_get_drvdata(dev);
+	struct qpnp_hap *hap = container_of(timed_dev, struct qpnp_hap,
+					 timed_dev);
+	static u32 data;
+	if (sscanf(buf, "%u", &data) != 1)
+		return -EINVAL;
+	hap->vmax_mv = data;
+	qpnp_hap_vmax_config(hap);
+	return count;
+}
+
+/* sysfs show function for vmax */
+static ssize_t qpnp_hap_vmax_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct timed_output_dev *timed_dev = dev_get_drvdata(dev);
+	struct qpnp_hap *hap = container_of(timed_dev, struct qpnp_hap,
+					 timed_dev);
+	printk("%s,vmax is :%d\n",__func__,hap->vmax_mv);
+	return snprintf(buf, PAGE_SIZE, "%d\n",hap->vmax_mv);
+}
+
+static ssize_t qpnp_hap_timediff_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	if (sscanf(buf, "%d", &time_diff) != 1)
+		return -EINVAL;
+	printk("%s,time_diff is %d\n",__func__,time_diff);
+	return count;
+}
+
+/* sysfs show function for timediff */
+static ssize_t qpnp_hap_timediff_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	printk("%s,time_diff is :%d\n",__func__,time_diff);
+	return snprintf(buf, PAGE_SIZE, "%d\n",time_diff);
+}
+
+static ssize_t qpnp_hap_brake_enable_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int rc,temp;
+	u8 reg;
+	struct timed_output_dev *timed_dev = dev_get_drvdata(dev);
+	struct qpnp_hap *hap = container_of(timed_dev, struct qpnp_hap,
+					 timed_dev);
+	if (sscanf(buf, "%d", &temp) != 1)
+		return -EINVAL;
+	printk("%s,brake_enable is %d\n",__func__,temp);
+	hap->en_brake = temp;
+	rc = qpnp_hap_read_reg(hap, &reg, QPNP_HAP_EN_CTL2_REG(hap->base));
+	if (rc < 0)
+		return rc;
+	reg &= QPNP_HAP_BRAKE_MASK;
+	reg |= hap->en_brake;
+	rc = qpnp_hap_write_reg(hap, &reg, QPNP_HAP_EN_CTL2_REG(hap->base));
+	if (rc)
+		return rc;
+	return count;
+}
+
+/* sysfs show function for brake enable */
+static ssize_t qpnp_hap_brake_enable_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct timed_output_dev *timed_dev = dev_get_drvdata(dev);
+	struct qpnp_hap *hap = container_of(timed_dev, struct qpnp_hap,
+					 timed_dev);
+	printk("%s,brake_enable is :%d\n",__func__,hap->en_brake);
+	return snprintf(buf, PAGE_SIZE, "%d\n",hap->en_brake);
+}
+ 
 /* sysfs store for ramp test data */
 static ssize_t qpnp_hap_min_max_test_data_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
@@ -1273,9 +1674,50 @@ static struct device_attribute qpnp_hap_attrs[] = {
 	__ATTR(wf_s7, (S_IRUGO | S_IWUSR | S_IWGRP),
 			qpnp_hap_wf_s7_show,
 			qpnp_hap_wf_s7_store),
+#ifdef X3_SHORT_VIBRATE
+	__ATTR(wf_pat1_s0, (S_IRUGO | S_IWUSR | S_IWGRP),
+			qpnp_hap_wf_pat1_s0_show,
+			qpnp_hap_wf_pat1_s0_store),
+	__ATTR(wf_pat1_s1, (S_IRUGO | S_IWUSR | S_IWGRP),
+			qpnp_hap_wf_pat1_s1_show,
+			qpnp_hap_wf_pat1_s1_store),
+	__ATTR(wf_pat1_s2, (S_IRUGO | S_IWUSR | S_IWGRP),
+			qpnp_hap_wf_pat1_s2_show,
+			qpnp_hap_wf_pat1_s2_store),
+	__ATTR(wf_pat1_s3, (S_IRUGO | S_IWUSR | S_IWGRP),
+			qpnp_hap_wf_pat1_s3_show,
+			qpnp_hap_wf_pat1_s3_store),
+	__ATTR(wf_pat1_s4, (S_IRUGO | S_IWUSR | S_IWGRP),
+			qpnp_hap_wf_pat1_s4_show,
+			qpnp_hap_wf_pat1_s4_store),
+	__ATTR(wf_pat1_s5, (S_IRUGO | S_IWUSR | S_IWGRP),
+			qpnp_hap_wf_pat1_s5_show,
+			qpnp_hap_wf_pat1_s5_store),
+	__ATTR(wf_pat1_s6, (S_IRUGO | S_IWUSR | S_IWGRP),
+			qpnp_hap_wf_pat1_s6_show,
+			qpnp_hap_wf_pat1_s6_store),
+	__ATTR(wf_pat1_s7, (S_IRUGO | S_IWUSR | S_IWGRP),
+			qpnp_hap_wf_pat1_s7_show,
+			qpnp_hap_wf_pat1_s7_store),
+#endif
 	__ATTR(wf_update, (S_IRUGO | S_IWUSR | S_IWGRP),
 			qpnp_hap_wf_update_show,
 			qpnp_hap_wf_update_store),
+	__ATTR(brake_pat0, (S_IRUGO | S_IWUSR | S_IWGRP),
+			qpnp_hap_wf_brake0_show,
+			qpnp_hap_wf_brake0_store),
+	__ATTR(brake_pat1, (S_IRUGO | S_IWUSR | S_IWGRP),
+			qpnp_hap_wf_brake1_show,
+			qpnp_hap_wf_brake1_store),
+	__ATTR(brake_pat2, (S_IRUGO | S_IWUSR | S_IWGRP),
+			qpnp_hap_wf_brake2_show,
+			qpnp_hap_wf_brake2_store),
+	__ATTR(brake_pat3, (S_IRUGO | S_IWUSR | S_IWGRP),
+			qpnp_hap_wf_brake3_show,
+			qpnp_hap_wf_brake3_store),
+	__ATTR(brake_update, (S_IRUGO | S_IWUSR | S_IWGRP),
+			NULL,
+			qpnp_hap_brake_update_store),
 	__ATTR(wf_rep, (S_IRUGO | S_IWUSR | S_IWGRP),
 			qpnp_hap_wf_rep_show,
 			qpnp_hap_wf_rep_store),
@@ -1288,6 +1730,15 @@ static struct device_attribute qpnp_hap_attrs[] = {
 	__ATTR(dump_regs, (S_IRUGO | S_IWUSR | S_IWGRP),
 			qpnp_hap_dump_regs_show,
 			NULL),
+	__ATTR(vmax, (S_IRUGO | S_IWUSR | S_IWGRP),
+			qpnp_hap_vmax_show,
+			qpnp_hap_vmax_store),
+	__ATTR(time_diff, (S_IRUGO | S_IWUSR | S_IWGRP),
+			qpnp_hap_timediff_show,
+			qpnp_hap_timediff_store),
+	__ATTR(brake_enable, (S_IRUGO | S_IWUSR | S_IWGRP),
+			qpnp_hap_brake_enable_show,
+			qpnp_hap_brake_enable_store),
 	__ATTR(ramp_test, (S_IRUGO | S_IWUSR | S_IWGRP),
 			qpnp_hap_ramp_test_data_show,
 			qpnp_hap_ramp_test_data_store),
@@ -1506,7 +1957,11 @@ static void qpnp_hap_td_enable(struct timed_output_dev *dev, int value)
 	mutex_lock(&hap->lock);
 	hrtimer_cancel(&hap->hap_timer);
 
-	if (value == 0) {
+	value += time_diff;
+#ifdef X3_SHORT_VIBRATE_DEBUG
+	printk("%s,value=%dms\n", __func__, value);
+#endif
+	if (value <= 0) {
 		if (hap->state == 0) {
 			mutex_unlock(&hap->lock);
 			return;
@@ -1515,11 +1970,53 @@ static void qpnp_hap_td_enable(struct timed_output_dev *dev, int value)
 	} else {
 		value = (value > hap->timeout_ms ?
 				 hap->timeout_ms : value);
+#ifdef X3_SHORT_VIBRATE
+	{
+	int tmp = DIV_ROUND_UP(value*1000, hap->wave_play_rate_us);
+	int rc = 0;
+	u8 i = 0;
+	u8 reg = 0;
+
+	if(0 == tmp) {
+		printk("%s, ERROR: value = 0\n", __func__);
+		goto unlock;
+	}
+	hap->long_pat_cnt = (u16)(tmp / QPNP_HAP_WAV_SAMP_LEN);
+	hap->last_samp_cnt = (u8)(tmp % QPNP_HAP_WAV_SAMP_LEN);
+#ifdef X3_SHORT_VIBRATE_DEBUG
+	printk("%s,total=%d, long_pat_cnt=%d, last_samp_cnt=%d\n", __func__, tmp, hap->long_pat_cnt, hap->last_samp_cnt);
+#endif
+	if(hap->long_pat_cnt > 0) {
+		for(i=0; i<QPNP_HAP_WAV_SAMP_LEN; i++) {
+			hap->wave_samp[i] = hap->wave_samp_pat1[i];
+		}
+		hap->long_pat_cnt--;
+	}
+	else {
+		for(i=0; i<hap->last_samp_cnt; i++) {
+			hap->wave_samp[i] = hap->wave_samp_pat1[i];
+		}
+	}
+
+	if((hap->long_pat_cnt > 0) || (hap->last_samp_cnt > 0)) {
+		hap->wf_update = true;
+	}
+
+	for(i=0; i<QPNP_HAP_WAV_SAMP_LEN; i++) {
+		reg = hap->wave_samp[i];
+		rc = qpnp_hap_write_reg(hap, &reg,
+			QPNP_HAP_WAV_S_REG_BASE(hap->base) + i);
+		if (rc)
+			goto unlock;
+	}
+	}
+#endif
 		hap->state = 1;
 		hrtimer_start(&hap->hap_timer,
 			      ktime_set(value / 1000, (value % 1000) * 1000000),
 			      HRTIMER_MODE_REL);
 	}
+unlock:
 	mutex_unlock(&hap->lock);
 	schedule_work(&hap->work);
 }
@@ -1612,6 +2109,12 @@ static enum hrtimer_restart qpnp_hap_timer(struct hrtimer *timer)
 	struct qpnp_hap *hap = container_of(timer, struct qpnp_hap,
 							 hap_timer);
 
+#ifdef X3_SHORT_VIBRATE
+	hap->wf_update = false;
+	hap->long_pat_cnt = 0;
+	hap->last_samp_cnt = 0;
+	memset(hap->wave_samp, 0, QPNP_HAP_WAV_SAMP_LEN*sizeof(*(hap->wave_samp)));
+#endif
 	hap->state = 0;
 	schedule_work(&hap->work);
 

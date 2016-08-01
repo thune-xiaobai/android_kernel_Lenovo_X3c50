@@ -109,9 +109,12 @@ void mdss_dsi_ctrl_init(struct device *ctrl_dev,
 	mutex_init(&ctrl->mutex);
 	mutex_init(&ctrl->cmd_mutex);
 	mutex_init(&ctrl->clk_lane_mutex);
+	mutex_init(&ctrl->cmdlist_mutex);
 	mdss_dsi_buf_alloc(ctrl_dev, &ctrl->tx_buf, SZ_4K);
 	mdss_dsi_buf_alloc(ctrl_dev, &ctrl->rx_buf, SZ_4K);
 	mdss_dsi_buf_alloc(ctrl_dev, &ctrl->status_buf, SZ_4K);
+//add for lenovo upgrade M
+	mdss_dsi_buf_alloc(ctrl_dev, &ctrl->status_buf2, SZ_4K);
 	ctrl->cmdlist_commit = mdss_dsi_cmdlist_commit;
 
 
@@ -980,7 +983,8 @@ void mdss_dsi_cmd_bta_sw_trigger(struct mdss_panel_data *pdata)
 
 	pr_debug("%s: BTA done, status = %d\n", __func__, status);
 }
-
+//add for lenovo upgrade M
+extern void mdss_dsi_panel_00_dcs(struct mdss_dsi_ctrl_pdata *ctrl);
 static int mdss_dsi_read_status(struct mdss_dsi_ctrl_pdata *ctrl)
 {
 	struct dcs_cmd_req cmdreq;
@@ -997,7 +1001,23 @@ static int mdss_dsi_read_status(struct mdss_dsi_ctrl_pdata *ctrl)
 		cmdreq.flags  |= CMD_REQ_LP_MODE;
 	else if (ctrl->status_cmds.link_state == DSI_HS_MODE)
 		cmdreq.flags |= CMD_REQ_HS_MODE;
+//jinjt add reading second register from lcd driver ic for esd
+    mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+	usleep(500);
+    memset(&cmdreq, 0, sizeof(cmdreq));
+    cmdreq.cmds = ctrl->status_cmds2.cmds;
+    cmdreq.cmds_cnt = ctrl->status_cmds2.cmd_cnt;
+    /*pr_info("==jinjt2==%s cmdreq.cmds_cnt=%d\n",__func__,cmdreq.cmds_cnt);*/
+    cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL | CMD_REQ_RX;
+    cmdreq.rlen = ctrl->status_cmds_rlen;
+    cmdreq.cb = NULL;
+    cmdreq.rbuf = ctrl->status_buf2.data;
 
+    if (ctrl->status_cmds2.link_state == DSI_LP_MODE) 
+        cmdreq.flags |= CMD_REQ_LP_MODE; 
+    else if (ctrl->status_cmds2.link_state == DSI_HS_MODE) 
+        cmdreq.flags |= CMD_REQ_HS_MODE; 
+//end
 	return mdss_dsi_cmdlist_put(ctrl, &cmdreq);
 }
 
@@ -1053,7 +1073,7 @@ static void mdss_dsi_mode_setup(struct mdss_panel_data *pdata)
 	u32 ystride, bpp, dst_bpp;
 	u32 stream_ctrl, stream_total;
 	u32 dummy_xres = 0, dummy_yres = 0;
-	u32 hsync_period, vsync_period;
+	u32 hsync_period, vsync_period, reg = 0;
 
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
@@ -1129,6 +1149,13 @@ static void mdss_dsi_mode_setup(struct mdss_panel_data *pdata)
 			stream_total = height << 16 | width;
 		}
 
+		/* Enable frame transfer in burst mode */
+		if (ctrl_pdata->hw_rev >= MDSS_DSI_HW_REV_103) {
+			reg = MIPI_INP(ctrl_pdata->ctrl_base + 0x1b8);
+			reg = reg | BIT(16);
+			MIPI_OUTP((ctrl_pdata->ctrl_base + 0x1b8), reg);
+			ctrl_pdata->burst_mode_enabled = 1;
+		}
 		/* DSI_COMMAND_MODE_MDP_STREAM_CTRL */
 		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x60, stream_ctrl);
 		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x58, stream_ctrl);
@@ -2169,18 +2196,26 @@ int mdss_dsi_cmdlist_commit(struct mdss_dsi_ctrl_pdata *ctrl, int from_mdp)
 	int ret = -EINVAL;
 	int rc = 0;
 	bool hs_req = false;
+    bool cmd_mutex_acquired = false;
 
 	if (mdss_get_sd_client_cnt())
 		return -EPERM;
 
 	if (from_mdp) {	/* from mdp kickoff */
+        if (!ctrl->burst_mode_enabled) {
 		mutex_lock(&ctrl->cmd_mutex);
+        cmd_mutex_acquired = true;
+        }
 		pinfo = &ctrl->panel_data.panel_info;
 		if (pinfo->partial_update_enabled)
 			roi = &pinfo->roi;
 	}
 
 	req = mdss_dsi_cmdlist_get(ctrl);
+    if (req && from_mdp && ctrl->burst_mode_enabled) {
+        mutex_lock(&ctrl->cmd_mutex);
+        cmd_mutex_acquired = true;
+    }
 
 	MDSS_XLOG(ctrl->ndx, from_mdp, ctrl->mdp_busy, current->pid,
 							XLOG_FUNC_ENTRY);
@@ -2188,10 +2223,32 @@ int mdss_dsi_cmdlist_commit(struct mdss_dsi_ctrl_pdata *ctrl, int from_mdp)
 	if (req && (req->flags & CMD_REQ_HS_MODE))
 		hs_req = true;
 
-	/* make sure dsi_cmd_mdp is idle */
-	mdss_dsi_cmd_mdp_busy(ctrl);
+	if (req == NULL)
+		goto need_lock;
+
+    if (!ctrl->burst_mode_enabled || from_mdp) {
+        /* make sure dsi_cmd_mdp is idle when
+         * burst mode is not enabled
+         */
+        mdss_dsi_cmd_mdp_busy(ctrl);
+    }
 
 	mdss_dsi_get_hw_revision(ctrl);
+
+    mdss_dsi_clk_ctrl(ctrl,DSI_BUS_CLKS,1);
+    if (ctrl->mdss_util->iommu_ctrl) {
+        rc = ctrl->mdss_util->iommu_ctrl(1);
+        if (IS_ERR_VALUE(rc)) {
+            pr_err("IOMMU attach failed\n");
+            mutex_unlock(&ctrl->cmd_mutex);
+            return rc;
+        }
+    }
+
+
+    if (ctrl->mdss_util->iommu_ctrl)
+        ctrl->mdss_util->iommu_ctrl(0);
+    mdss_dsi_clk_ctrl(ctrl, DSI_BUS_CLKS, 0);
 
 	/* For DSI versions less than 1.3.0, CMD DMA TPG is not supported */
 	if (req && (ctrl->hw_rev < MDSS_DSI_HW_REV_103))
@@ -2284,8 +2341,8 @@ need_lock:
 		 */
 		if (!roi || (roi->w != 0 || roi->h != 0))
 			mdss_dsi_cmd_mdp_start(ctrl);
-
-		mutex_unlock(&ctrl->cmd_mutex);
+		if (cmd_mutex_acquired)
+			mutex_unlock(&ctrl->cmd_mutex);
 	} else {	/* from dcs send */
 		if (ctrl->cmd_clk_ln_recovery_en &&
 				ctrl->panel_mode == DSI_CMD_MODE && hs_req)
@@ -2591,6 +2648,26 @@ void mdss_dsi_error(struct mdss_dsi_ctrl_pdata *ctrl)
 	dsi_send_events(ctrl, DSI_EV_MDP_BUSY_RELEASE, 0);
 }
 
+//add by zhanggb, for calcuting commiting fps
+int lcd_fps_count = 0;
+static void mdss_fps_calcute(void)
+{
+	static unsigned long slottimejiffies,nowtimejiffies;
+	int refresh_fps = 0;
+	
+	if(lcd_fps_count++){
+		if(lcd_fps_count == 1)
+			nowtimejiffies = jiffies_to_msecs(jiffies);
+		if( (lcd_fps_count&0xff) == 0)
+		{
+			slottimejiffies =  jiffies_to_msecs(jiffies) - nowtimejiffies;
+			refresh_fps = 256 * 1000 /slottimejiffies;
+			nowtimejiffies = jiffies_to_msecs(jiffies);
+			pr_info("%s: === FPS = %d fps, slot=%lu, count=%x\n",  __func__, refresh_fps, slottimejiffies, lcd_fps_count);
+		}
+	}
+}
+//end
 irqreturn_t mdss_dsi_isr(int irq, void *ptr)
 {
 	u32 isr;
@@ -2665,6 +2742,8 @@ irqreturn_t mdss_dsi_isr(int irq, void *ptr)
 		ctrl->mdp_busy = false;
 		complete_all(&ctrl->mdp_comp);
 		spin_unlock(&ctrl->mdp_lock);
+//add for lenovo upgrade M
+		mdss_fps_calcute();
 	}
 
 	if (isr & DSI_INTR_DYNAMIC_REFRESH_DONE) {

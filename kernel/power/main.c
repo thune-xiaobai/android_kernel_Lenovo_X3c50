@@ -342,6 +342,7 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 	suspend_state_t state;
 	int error;
 
+	printk("%s(), buf=%s, n=%d\n", __func__, buf,(int)n);
 	error = pm_autosleep_lock();
 	if (error)
 		return error;
@@ -352,6 +353,7 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 	}
 
 	state = decode_state(buf, n);
+	printk("%s(), state=%d\n", __func__, state);
 	if (state < PM_SUSPEND_MAX)
 		error = pm_suspend(state);
 	else if (state == PM_SUSPEND_MAX)
@@ -463,6 +465,7 @@ static ssize_t autosleep_store(struct kobject *kobj,
 	suspend_state_t state = decode_state(buf, n);
 	int error;
 
+	printk("%s(), state=%d, buf=%s, n=%d\n", __func__, state, buf,(int)n);
 	if (state == PM_SUSPEND_ON
 	    && strcmp(buf, "off") && strcmp(buf, "off\n"))
 		return -EINVAL;

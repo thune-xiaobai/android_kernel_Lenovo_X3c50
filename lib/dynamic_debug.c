@@ -964,6 +964,69 @@ static void ddebug_remove_all_tables(void)
 	mutex_unlock(&ddebug_lock);
 }
 
+/* Define TEST_IMEM to add a sysfs interface to read/write imem */
+#define TEST_IMEM
+#ifdef TEST_IMEM
+static ssize_t ddebug_test_imem_read(struct file *file,char __user *buf, size_t n, loff_t *ppos)
+{
+	printk("---Imem read/wrte testing---\n");
+	printk("Format: echo rwmode addr [val] > test_imem\n");
+	printk("Example: echo 0 20 > test_imem    ;read the imem offset 0x20 address value\n");
+	printk("Example: echo 1 20 fedcba123 > test_imem    ;write 0xfedcba123 to imem offset 0x20 address\n");
+	return 0;
+}
+
+extern int imem_read(int offset);
+extern void imem_write(int offset,unsigned int val);
+static ssize_t ddebug_test_imem_write(struct file *file,const char* buf,
+		size_t n, loff_t *ppos)
+{
+	int rw_mode,rw_addr,rw_val = 0;
+	int res;
+
+	res = sscanf(buf, "%x %x %x", &rw_mode,&rw_addr,&rw_val);
+	printk("\n");
+	printk("%s: rw_mode=%x, rw_addr=0x%x, rw_val=0x%x\n",__func__,rw_mode,rw_addr,rw_val);
+
+	if(res < 1)
+		goto test_imem_store_wrong_para;
+
+	switch(rw_mode) {
+		case 0:
+			rw_val = imem_read(rw_addr);
+			printk("%s:read result 0x%x\n",__func__,rw_val);
+			break;
+		case 1:
+			printk("%s:write result 0x%x\n",__func__,rw_val);
+			imem_write(rw_addr,(unsigned int)rw_val);
+			break;
+		default:
+			printk("%s:unsupport read write mode in imem\n",__func__);
+			break;
+	}
+	goto test_imem_store_ok;
+
+test_imem_store_wrong_para:
+	printk("Wrong Input!\n");
+	printk("cat test_imem for supported imem mode.\n");
+	printk("Format: echo rwmode addr [val] > test_imem\n");
+	printk("Example: echo 0 20 > test_imem    ;read the imem offset 0x20 address value\n");
+	printk("Example: echo 1 20 fedcba123 > test_imem    ;write 0xfedcba123 to imem offset 0x20 address\n");
+
+test_imem_store_ok:
+	printk("\n");
+	return n;
+}
+
+static const struct file_operations ddebug_testimem_fops = {
+	.owner = THIS_MODULE,
+	.read = ddebug_test_imem_read,
+	.write = ddebug_test_imem_write,
+};
+
+#endif //TEST_imem
+
+
 static __initdata int ddebug_init_success;
 
 static int __init dynamic_debug_init_debugfs(void)
@@ -982,6 +1045,16 @@ static int __init dynamic_debug_init_debugfs(void)
 		debugfs_remove(dir);
 		return -ENOMEM;
 	}
+#ifdef TEST_IMEM
+	file = debugfs_create_file("test_imem", 0644, dir, NULL,
+			&ddebug_testimem_fops);
+	if (!file) {
+		printk("%s:init testimem node fail\n",__func__);
+		debugfs_remove(dir);
+		return -ENOMEM;
+	}
+#endif
+
 	return 0;
 }
 

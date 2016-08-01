@@ -1875,6 +1875,19 @@ static int mmc_resume(struct mmc_host *host)
 	BUG_ON(!host->card);
 
 	mmc_claim_host(host);
+
+#ifdef SKH_MMC_WA_CMD5
+	if (mmc_card_can_sleep(host) && (host->index == 0)
+			&& (host->card && host->card->cid.manfid == 0x90)) {
+		pr_err("%s:hynix  mmc_resume\n",__func__);
+		err = mmc_card_awake(host);
+		if (err) {
+			pr_err("%s: MMC card mmc_card_awake fail\n",
+			       mmc_hostname(host));
+		}
+	} else {
+#endif /* SKH_MMC_WA_CMD5 */
+
 	retries = 3;
 	while (retries) {
 		err = mmc_init_card(host, host->ocr, host->card);
@@ -1891,6 +1904,9 @@ static int mmc_resume(struct mmc_host *host)
 		}
 		break;
 	}
+#ifdef SKH_MMC_WA_CMD5
+	}
+#endif /* SKH_MMC_WA_CMD5 */
 	mmc_release_host(host);
 
 	/*

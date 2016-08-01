@@ -168,6 +168,10 @@ void __attribute__ ((weak)) arch_suspend_enable_irqs(void)
  *
  * This function should be called after devices have been suspended.
  */
+/* yangjq, 20130516, Add for sysfs tlmm_before_sleep */
+extern void vreg_before_sleep_save_configs(void);
+extern void tlmm_before_sleep_set_configs(void);
+extern void tlmm_before_sleep_save_configs(void);
 static int suspend_enter(suspend_state_t state, bool *wakeup)
 {
 	char suspend_abort[MAX_SUSPEND_ABORT_LEN];
@@ -208,6 +212,14 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 		freeze_enter();
 		goto Platform_wake;
 	}
+
+	/* yangjq, 20130516, Add for sysfs tlmm_before_sleep. START */
+	vreg_before_sleep_save_configs();
+#if 1 //TBD
+	tlmm_before_sleep_set_configs();
+	tlmm_before_sleep_save_configs();
+#endif
+	/* yangjq, 20130516, Add for sysfs tlmm_before_sleep. END */
 
 	error = disable_nonboot_cpus();
 	if (error || suspend_test(TEST_CPUS)) {
@@ -392,6 +404,10 @@ static void pm_suspend_marker(char *annotation)
  * Check if the value of @state represents one of the supported states,
  * execute enter_state() and update system suspend statistics.
  */
+/* yangjq, 20130524, Add sleeplog, START */
+extern void log_suspend_enter(void);
+extern void log_suspend_exit(int error);
+/* yangjq, 20130524, Add sleeplog, END */
 int pm_suspend(suspend_state_t state)
 {
 	int error;
@@ -400,6 +416,8 @@ int pm_suspend(suspend_state_t state)
 		return -EINVAL;
 
 	pm_suspend_marker("entry");
+	/* yangjq, 20130524, Add sleeplog */
+	log_suspend_enter();
 	error = enter_state(state);
 	if (error) {
 		suspend_stats.fail++;
@@ -407,6 +425,8 @@ int pm_suspend(suspend_state_t state)
 	} else {
 		suspend_stats.success++;
 	}
+	/* yangjq, 20130524, Add sleeplog */
+	log_suspend_exit(error);
 	pm_suspend_marker("exit");
 	return error;
 }

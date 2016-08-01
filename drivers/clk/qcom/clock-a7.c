@@ -171,6 +171,24 @@ static void populate_opp_table(struct platform_device *pdev)
 	print_opp_table(a7_cpu);
 }
 
+#if 0
+//yangjq, 20140113, Add to show AP's clock rate in /sys/private/pm_status, START
+unsigned long acpu_clk_get_rate(int cpu)
+{
+	unsigned long cur_rate;
+
+#if 0
+	struct clk *c = cpu_clk[cpu];
+	cur_rate = clk_get_rate(c);
+#else
+	cur_rate = clk_get_rate(&a7ssmux.c);
+#endif
+
+	return cur_rate;
+}
+//yangjq, 20140113, Add to show AP's clock rate in /sys/private/pm_status, END
+#endif
+
 static int of_get_fmax_vdd_class(struct platform_device *pdev, struct clk *c,
 								char *prop_name)
 {

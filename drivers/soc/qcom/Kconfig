@@ -643,6 +643,14 @@ config KERNEL_TEXT_MPU_PROT
 	  all masters; Write access is only permited to the
 	  secure world.
 
+config LENOVO_DEBUG_MRD
+	bool "Lenovo Mini Ramdump Support"
+	help
+	  Mini ramdump is a very small memory collect that define by app core driver,
+	  modem, rpm or other process, such as the dmesg log,android logcat log,f3 trace
+	  buffer,ocimem,rpm ram, etc.these info will be saved in a mrd partition after
+	  the system enter into dloadmode due to panic or other critical reboot reason.
+
 source "drivers/soc/qcom/memshare/Kconfig"
 
 endif # ARCH_MSM

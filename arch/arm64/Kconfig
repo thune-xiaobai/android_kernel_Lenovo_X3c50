@@ -529,6 +529,11 @@ config FORCE_MAX_ZONEORDER
 	default "14" if (ARM64_64K_PAGES && TRANSPARENT_HUGEPAGE)
 	default "11"
 
+config LENOVO_DEBUG_RKM
+	bool "Configure Replay Kernel Message feature for debug"
+	help
+	  RKM can replay last kernel dmesglog info after reboot.
+
 config SECCOMP
 	bool "Enable seccomp to safely compute untrusted bytecode"
 	---help---

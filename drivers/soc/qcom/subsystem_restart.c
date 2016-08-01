@@ -231,6 +231,7 @@ static ssize_t restart_level_store(struct device *dev,
 	for (i = 0; i < ARRAY_SIZE(restart_levels); i++)
 		if (!strncasecmp(buf, restart_levels[i], count)) {
 			subsys->restart_level = i;
+			printk("subsystem %s set restart level to %s\n",subsys->desc->name, restart_levels[i]);
 			return count;
 		}
 	return -EPERM;

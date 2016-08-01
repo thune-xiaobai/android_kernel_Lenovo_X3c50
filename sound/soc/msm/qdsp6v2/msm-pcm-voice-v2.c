@@ -164,8 +164,8 @@ static int msm_pcm_open(struct snd_pcm_substream *substream)
 		voice->capture_substream = substream;
 
 	voice->instance++;
-	pr_debug("%s: Instance = %d, Stream ID = %s\n",
-			__func__ , voice->instance, substream->pcm->id);
+	pr_info("%s: Instance = %d, stream=%d, Stream ID = %s\n",
+			__func__ , voice->instance, substream->stream, substream->pcm->id);
 	runtime->private_data = voice;
 
 	mutex_unlock(&voice->lock);
@@ -215,13 +215,13 @@ static int msm_pcm_close(struct snd_pcm_substream *substream)
 
 	prtd->instance--;
 	if (!prtd->playback_start && !prtd->capture_start) {
-		pr_debug("end voice call\n");
-
 		session_id = get_session_id(prtd);
+		pr_info("%s: end voice cal, session_id=%xl\n", __func__, session_id);
 		if (session_id)
 			voc_end_voice_call(session_id);
 	}
 	mutex_unlock(&prtd->lock);
+	pr_info("%s:  stream=%d, Stream ID = %s\n",	__func__ , substream->stream, substream->pcm->id);
 
 	return ret;
 }
@@ -403,7 +403,7 @@ static int msm_voice_mute_put(struct snd_kcontrol *kcontrol,
 		goto done;
 	}
 
-	pr_debug("%s: mute=%d session_id=%#x ramp_duration=%d\n", __func__,
+	pr_info("%s: mute=%d session_id=%#x ramp_duration=%d\n", __func__,
 		mute, session_id, ramp_duration);
 
 	ret = voc_set_tx_mute(session_id, TX_PATH, mute, ramp_duration);

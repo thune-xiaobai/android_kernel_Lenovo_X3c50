@@ -489,6 +489,18 @@ static struct clk *cpu_clk[] = {
 	&krait3_clk.c,
 };
 
+//yangjq, 20140113, Add to show AP's clock rate in /sys/private/pm_status, START
+unsigned long acpu_clk_get_rate(int cpu)
+{
+	unsigned long cur_rate;
+
+	struct clk *c = cpu_clk[cpu];
+	cur_rate = clk_get_rate(c);
+
+	return cur_rate;
+}
+//yangjq, 20140113, Add to show AP's clock rate in /sys/private/pm_status, END
+
 static void get_krait_bin_format_b(struct platform_device *pdev,
 			int *speed, int *pvs, int *svs_pvs, int *pvs_ver)
 {

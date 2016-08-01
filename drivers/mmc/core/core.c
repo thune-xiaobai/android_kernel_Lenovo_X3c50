@@ -47,6 +47,8 @@
 #include "sd_ops.h"
 #include "sdio_ops.h"
 
+#define X3_TRY_RESCAN_MMC_TWICE
+
 /* If the device is not responding */
 #define MMC_CORE_TIMEOUT_MS	(10 * 60 * 1000) /* 10 minute timeout */
 
@@ -3426,8 +3428,22 @@ void mmc_rescan(struct work_struct *work)
 
 	mmc_rpm_hold(host, &host->class_dev);
 	mmc_claim_host(host);
+#ifdef X3_TRY_RESCAN_MMC_TWICE
+    {
+    int retries = 2;
+    do {
+        if(!mmc_rescan_try_freq(host, host->f_min)) {
+            extend_wakelock = true;
+            break;
+        }
+	    printk("%s: %s: re-rescan mmc. (retries=%d)\n",
+		    mmc_hostname(host), __func__, retries);
+    } while(--retries);
+    }
+#else
 	if (!mmc_rescan_try_freq(host, host->f_min))
 		extend_wakelock = true;
+#endif
 	mmc_release_host(host);
 	mmc_rpm_release(host, &host->class_dev);
  out:
@@ -3687,6 +3703,17 @@ int mmc_suspend_host(struct mmc_host *host)
 	}
 	mmc_bus_put(host);
 
+
+#ifdef SKH_MMC_WA_CMD5
+	if (host->index == 0 && (host->card && host->card->cid.manfid == 0x90)) {
+		pr_err("%s: %s: host->pm_flags(0x%x) | MMC_PM_KEEP_POWER\n",
+			mmc_hostname(host), __func__, host->pm_flags);
+		host->pm_flags |= MMC_PM_KEEP_POWER;
+		host->clk_old = host->ios.clock;
+		host->ios.clock = 0;
+		mmc_set_ios(host);
+	}
+#endif /* SKH_MMC_WA_CMD5 */
 	if (!err && !mmc_card_keep_power(host))
 		mmc_power_off(host);
 
@@ -3719,6 +3746,13 @@ int mmc_resume_host(struct mmc_host *host)
 	}
 
 	if (host->bus_ops && !host->bus_dead) {
+#ifdef SKH_MMC_WA_CMD5
+		if (host->index == 0 && (host->card && host->card->cid.manfid == 0x90)) {
+			pr_err("%s: %s: host->pm_flags(0x%x)\n",
+				mmc_hostname(host), __func__, host->pm_flags);
+			mmc_set_clock(host, host->clk_old);
+		}
+#endif /* SKH_MMC_WA_CMD5*/
 		if (!mmc_card_keep_power(host)) {
 			mmc_power_up(host);
 			mmc_select_voltage(host, host->ocr);

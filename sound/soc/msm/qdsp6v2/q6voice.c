@@ -41,6 +41,9 @@ enum {
 	VOC_RTAC_MEM_MAP_TOKEN
 };
 
+//add for no-switching bias level during voice call 20150708
+bool g_bInCall = false;
+
 static struct common_data common;
 static bool module_initialized;
 
@@ -2890,8 +2893,8 @@ static int voice_pause_voice_call(struct voice_data *v)
 	mvm_pause_voice_cmd.opcode = VSS_IMVM_CMD_PAUSE_VOICE;
 	v->mvm_state = CMD_STATUS_FAIL;
 
-	pr_debug("%s: send mvm_pause_voice_cmd pkt size = %d\n",
-		__func__, mvm_pause_voice_cmd.pkt_size);
+	pr_info("%s: send mvm_pause_voice_cmd pkt size = %d,  session_id=%x\n",
+               __func__, mvm_pause_voice_cmd.pkt_size, v->session_id);
 
 	ret = apr_send_pkt(apr_mvm,
 		(uint32_t *)&mvm_pause_voice_cmd);
@@ -5192,7 +5195,7 @@ int voc_end_voice_call(uint32_t session_id)
 	if (v->voc_state == VOC_RUN || v->voc_state == VOC_ERROR ||
 	    v->voc_state == VOC_CHANGE || v->voc_state == VOC_STANDBY) {
 
-		pr_debug("%s: VOC_STATE: %d\n", __func__, v->voc_state);
+		pr_info("%s: VOC_STATE: %d\n", __func__, v->voc_state);
 
 		ret = voice_destroy_vocproc(v);
 		if (ret < 0)
@@ -5201,6 +5204,7 @@ int voc_end_voice_call(uint32_t session_id)
 		voc_update_session_params(v);
 
 		voice_destroy_mvm_cvs_session(v);
+		g_bInCall = false;
 		v->voc_state = VOC_RELEASE;
 		if (common.is_vote_bms) {
 			/* vote low power to BMS during call stop */
@@ -5462,6 +5466,7 @@ int voc_start_voice_call(uint32_t session_id)
 		voice_destroy_mvm_cvs_session(v);
 		v->voc_state = VOC_INIT;
 	}
+	pr_info("%s: voc_state %d \n", __func__, v->voc_state);
 
 	if ((v->voc_state == VOC_INIT) ||
 		(v->voc_state == VOC_RELEASE)) {
@@ -5527,6 +5532,7 @@ int voc_start_voice_call(uint32_t session_id)
 		}
 
 		v->voc_state = VOC_RUN;
+		g_bInCall = true;
 	} else {
 		pr_err("%s: Error: Start voice called in state %d\n",
 			__func__, v->voc_state);

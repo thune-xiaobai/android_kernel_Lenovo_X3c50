@@ -741,6 +741,7 @@ static struct pil_reset_ops pil_ops_trusted = {
 	.proxy_unvote = pil_remove_proxy_vote,
 };
 
+void mrd_update_adsp_restart_reason(char *reason);
 static void log_failure_reason(const struct pil_tz_data *d)
 {
 	u32 size;
@@ -764,6 +765,7 @@ static void log_failure_reason(const struct pil_tz_data *d)
 
 	strlcpy(reason, smem_reason, min(size, MAX_SSR_REASON_LEN));
 	pr_err("%s subsystem failure reason: %s.\n", name, reason);
+	mrd_update_adsp_restart_reason(reason);
 
 	smem_reason[0] = '\0';
 	wmb();

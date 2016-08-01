@@ -863,5 +863,13 @@ config SENSORS_ISL29044A
 	help
 	 This option enables support for the INTERSIL ISL29044A P/L sensor.
 
+config INPUT_CWSTM32
+       tristate "CyWee CWSTM32 Sensor HUB"
+       depends on I2C && INPUT
+       select INPUT_POLLDEV
+       default y
+       help
+         This driver provides support for CWSTM32 Sensor HUB.
+
 endif
 

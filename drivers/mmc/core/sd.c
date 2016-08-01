@@ -1399,6 +1399,8 @@ int mmc_attach_sd(struct mmc_host *host)
 	while (retries && !host->rescan_disable) {
 		err = mmc_sd_init_card(host, host->ocr, NULL);
 		if (err) {
+			printk(KERN_ERR "%s: Re-init card in %s rc = %d (retries = %d)\n",
+			       mmc_hostname(host), __func__, err, retries);
 			retries--;
 			mmc_power_off(host);
 			usleep_range(5000, 5500);

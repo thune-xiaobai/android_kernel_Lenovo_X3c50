@@ -1733,3 +1733,15 @@ void xtime_update(unsigned long ticks)
 	do_timer(ticks);
 	write_sequnlock(&jiffies_lock);
 }
+
+#ifdef CONFIG_LENOVO_DEBUG_MRD
+void mrd_register_rtc_xtime(unsigned int tag)
+{
+	extern int mrd_register_shareindex_name(char* name, void* va, int size, unsigned int param1);
+
+	mrd_register_shareindex_name("rtxtime",
+			&timekeeper.xtime_sec,
+			sizeof(timekeeper.xtime_sec),
+			tag);
+}
+#endif

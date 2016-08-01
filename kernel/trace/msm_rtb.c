@@ -248,6 +248,8 @@ noinline int notrace uncached_logk(enum logk_event_type log_type, void *data)
 }
 EXPORT_SYMBOL(uncached_logk);
 
+extern int mrd_register_shareindex_name_phys(char* name,
+		unsigned int pa, int size, unsigned int param1);
 static int msm_rtb_probe(struct platform_device *pdev)
 {
 	struct msm_rtb_platform_data *d = pdev->dev.platform_data;
@@ -302,6 +304,13 @@ static int msm_rtb_probe(struct platform_device *pdev)
 
 	memset(msm_rtb.rtb, 0, msm_rtb.size);
 
+#ifdef CONFIG_LENOVO_DEBUG_MRD
+	mrd_register_shareindex_name_phys("rtb.bin",
+			msm_rtb.phys,
+			msm_rtb.size,
+			0);
+	//pr_info("%s: msm rtb phys=%llx,size=%d\n",__func__,msm_rtb.phys,msm_rtb.size);
+#endif
 
 #if defined(CONFIG_MSM_RTB_SEPARATE_CPUS)
 	for_each_possible_cpu(cpu) {

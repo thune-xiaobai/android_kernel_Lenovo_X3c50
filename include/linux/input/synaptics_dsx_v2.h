@@ -20,7 +20,7 @@
 #ifndef _SYNAPTICS_DSX_H_
 #define _SYNAPTICS_DSX_H_
 
-#define PLATFORM_DRIVER_NAME "synaptics_dsx"
+#define PLATFORM_DRIVER_NAME "synaptics_ts"
 #define I2C_DRIVER_NAME "synaptics_dsx_i2c"
 #define SPI_DRIVER_NAME "synaptics_dsx_spi"
 
@@ -31,7 +31,7 @@
  */
 struct synaptics_dsx_cap_button_map {
 	unsigned char nbuttons;
-	unsigned char *map;
+	u32 *map;
 };
 
 /*

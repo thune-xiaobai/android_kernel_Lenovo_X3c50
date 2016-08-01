@@ -190,6 +190,19 @@ void show_stack(struct task_struct *tsk, unsigned long *sp)
 #define S_SMP ""
 #endif
 
+#ifdef CONFIG_LENOVO_DEBUG_MRD
+static uint64_t ptreg_sp;
+void mrd_register_ptreg_sp(unsigned int tag)
+{
+	extern int mrd_register_shareindex_name(char* name, void* va, int size, unsigned int param1);
+
+	mrd_register_shareindex_name("ptreg_sp.bin",
+			&ptreg_sp,
+			16*1024,
+			tag);
+}
+#endif
+
 static int __die(const char *str, int err, struct thread_info *thread,
 		 struct pt_regs *regs)
 {
@@ -207,6 +220,8 @@ static int __die(const char *str, int err, struct thread_info *thread,
 
 	print_modules();
 	__show_regs(regs);
+	ptreg_sp = (uint64_t)virt_to_phys((void*)regs->sp);
+	pr_info("sp pa is 0x%llx\n",ptreg_sp);
 	pr_emerg("Process %.*s (pid: %d, stack limit = 0x%p)\n",
 		 TASK_COMM_LEN, tsk->comm, task_pid_nr(tsk), thread + 1);
 

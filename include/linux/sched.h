@@ -1075,6 +1075,10 @@ struct ravg {
 	 * statistics (rq->prev_runnable_sum) in previous window
 	 */
 	u64 mark_start;
+#ifdef CONFIG_SELFISH_TASK_MIGR
+	u64 selfish_task_sum;
+	u64 prev_selfish_task_sum;
+#endif
 	u32 sum, demand;
 	u32 sum_history[RAVG_HIST_SIZE_MAX];
 #ifdef CONFIG_SCHED_FREQ_INPUT
@@ -1092,7 +1096,6 @@ struct sched_entity {
 	u64			sum_exec_runtime;
 	u64			vruntime;
 	u64			prev_sum_exec_runtime;
-
 	u64			nr_migrations;
 
 #ifdef CONFIG_SCHEDSTATS
@@ -1197,6 +1200,9 @@ struct task_struct {
 	int nr_cpus_allowed;
 	cpumask_t cpus_allowed;
 
+#ifdef CONFIG_SELFISH_TASK_MIGR
+	bool task_need_down_migrate;
+#endif
 #ifdef CONFIG_PREEMPT_RCU
 	int rcu_read_lock_nesting;
 	char rcu_read_unlock_special;

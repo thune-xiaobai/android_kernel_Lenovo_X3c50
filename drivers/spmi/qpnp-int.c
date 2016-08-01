@@ -598,6 +598,8 @@ static int __qpnpint_handle_irq(struct spmi_controller *spmi_ctrl,
 		       struct qpnp_irq_spec *spec,
 		       bool show)
 {
+	//yangjq, 20130619, Add log to show MPM irq 62, GIC irq 222
+	extern int save_irq_wakeup_gpio(int irq, int gpio);
 	struct irq_domain *domain;
 	unsigned long hwirq, busno;
 	int irq;
@@ -634,6 +636,27 @@ static int __qpnpint_handle_irq(struct spmi_controller *spmi_ctrl,
 		pr_warn("%d triggered [0x%01x, 0x%02x,0x%01x] %s\n",
 				irq, spec->slave, spec->per, spec->irq, name);
 	} else {
+	//yangjq, 20130617, Add log to show MPM irq 62, GIC irq 222, START
+#if 0
+	desc = irq_to_desc(irq);
+	if (desc != NULL) {
+		if (irqd_is_wakeup_set(&desc->irq_data)) {
+			if (save_irq_wakeup(irq)) {
+#ifdef CONFIG_KALLSYMS
+				printk("%s(), irq=%d, %s, handler=(%pS)\n", __func__, irq,
+					desc->action && desc->action->name ? desc->action->name : "",
+					(void *)desc->action->handler);
+#else
+				printk("%s(), irq=%d, %s, handler=0x%08x\n", __func__, irq,
+					desc->action && desc->action->name ? desc->action->name : "",
+					(unsigned int)desc->action->handler);
+#endif
+			}
+		}
+	}
+#endif //0
+		//yangjq, 20130619, Add log to show MPM irq 62, GIC irq 222
+		save_irq_wakeup_gpio(irq, 0);
 		generic_handle_irq(irq);
 	}
 

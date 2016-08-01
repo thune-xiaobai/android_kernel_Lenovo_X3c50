@@ -54,7 +54,11 @@
 #include "mdss_mdp_splash_logo.h"
 #define CREATE_TRACE_POINTS
 #include "mdss_debug.h"
-
+//add for lenovo upgrade M
+#include "lcd_interface.h"
+extern int LCD_ID;
+extern struct panel_effect_data lcd_data;
+//end
 #ifdef CONFIG_FB_MSM_TRIPLE_BUFFER
 #define MDSS_FB_NUM 3
 #else
@@ -727,6 +731,209 @@ static ssize_t mdss_fb_change_dfps_mode(struct device *dev,
 	return len;
 }
 
+//add for lenovo upgrade M
+static ssize_t mdss_get_panel_name(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	ssize_t ret;
+if(LCD_ID == 0)
+	ret = snprintf(buf, PAGE_SIZE, "OTM1906C_L5508E6H_BOE_1080_1920_5.5\n");
+else
+	ret = snprintf(buf, PAGE_SIZE, "OTM1906C_L5508E6H_TIANMA_1080_1920_5.5\n");
+
+	return ret;
+}
+
+static ssize_t mdss_panel_get_ce(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	ssize_t ret = 0;
+	ret = get_effect_index_by_name("ce", &lcd_data);
+	if (ret < 0) {
+		ret = get_effect_index_by_name("饱和度", &lcd_data);
+		if (ret < 0)
+			return -EINVAL;
+	}
+
+	ret = snprintf(buf, PAGE_SIZE, "%d\n", lcd_data.mode->level[ret]);
+	return ret;
+}
+
+static ssize_t mdss_panel_get_cabc(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	ssize_t ret = 0;
+	ret = get_effect_index_by_name("cabc", &lcd_data);
+	if (ret < 0) {
+		ret = get_effect_index_by_name("动态背光", &lcd_data);
+		if (ret < 0)
+			return -EINVAL;
+	}
+
+	ret = snprintf(buf, PAGE_SIZE, "%d\n", lcd_data.mode->level[ret]);
+	return ret;
+}
+static ssize_t mdss_panel_get_dimming(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	ssize_t ret = 0;
+
+	ret = snprintf(buf, PAGE_SIZE, "not support\n");
+	return ret;
+}
+static ssize_t mdss_panel_set_cabc(struct device *dev, struct device_attribute *attr,
+			 const char *buf, size_t count)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+	struct hal_panel_ctrl_data ctrl;
+	unsigned long level;
+	int ret;
+
+	if (kstrtoul(buf, 0, &level))
+		return -EINVAL;
+	ret = get_effect_index_by_name("cabc", &lcd_data);
+	if (ret < 0) {
+		ret = get_effect_index_by_name("动态背光", &lcd_data);
+		if (ret < 0)
+			return -EINVAL;
+	}
+	ctrl.index = ret;
+	ctrl.level = level;
+	ctrl.id = SET_EFFECT;
+	ret = handle_lcd_effect_data(mfd, &lcd_data, &ctrl);
+
+	return count;
+}
+
+static ssize_t mdss_panel_set_ce(struct device *dev, struct device_attribute *attr,
+			 const char *buf, size_t count)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+	struct hal_panel_ctrl_data ctrl;
+	unsigned long level;
+	int ret;
+
+	if (kstrtoul(buf, 0, &level))
+		return -EINVAL;
+
+	ret = get_effect_index_by_name("ce", &lcd_data);
+	if (ret < 0) {
+		ret = get_effect_index_by_name("饱和度", &lcd_data);
+		if (ret < 0)
+			return -EINVAL;
+	}
+	ctrl.id = SET_EFFECT;
+	ctrl.index = ret;
+	ctrl.level = level;
+	ret = handle_lcd_effect_data(mfd, &lcd_data, &ctrl);
+
+	return count;
+}
+
+static ssize_t mdss_panel_set_dimming(struct device *dev, struct device_attribute *attr,
+			 const char *buf, size_t count)
+{
+	unsigned long mode;
+
+	if (kstrtoul(buf, 0, &mode))
+		return -EINVAL;
+
+	return count;
+}
+static ssize_t mdss_panel_set_effect(struct device *dev, struct device_attribute *attr,
+			 const char *buf, size_t count)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+	struct hal_panel_ctrl_data ctrl;
+	unsigned long data;
+	int index, level, ret;
+
+	if (kstrtoul(buf, 0, &data))
+		return -EINVAL;
+
+	index = (data >> 4) & 0xf;
+	level = data & 0xf;
+	if (index > lcd_data.effect_data->supported_effect)
+		return -EINVAL;
+
+	ctrl.id = SET_EFFECT;
+	ctrl.level = level;
+	ctrl.index = index;
+	ret = handle_lcd_effect_data(mfd, &lcd_data, &ctrl);
+
+	return count;
+}
+
+static ssize_t mdss_panel_get_effect(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	unsigned long index;
+
+	if (kstrtoul(buf, 0, &index))
+		return -EINVAL;
+
+	if (index > lcd_data.effect_data->supported_effect)
+		return -EINVAL;
+
+	return lcd_data.effect_data->effect[index].level;
+}
+
+
+static ssize_t mdss_panel_set_mode(struct device *dev, struct device_attribute *attr,
+			 const char *buf, size_t count)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+	struct hal_panel_ctrl_data ctrl;
+	unsigned long index;
+	int ret;
+
+	if (kstrtoul(buf, 0, &index))
+		return -EINVAL;
+
+	if (index > lcd_data.mode_data->supported_mode)
+		return -EINVAL;
+
+	ctrl.id = SET_MODE;
+	ctrl.mode = index;
+	printk("%s id: %d index %ld\n", __func__, ctrl.id, index);
+	ret = handle_lcd_effect_data(mfd, &lcd_data, &ctrl);
+
+	return count;
+}
+
+
+static ssize_t mdss_panel_get_mode(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	ssize_t ret = 0;
+	int index = lcd_data.mode_data->current_mode;
+
+	ret = snprintf(buf, PAGE_SIZE, "%s\n", lcd_data.mode_data->mode[index].name);
+
+	return ret;
+}
+static ssize_t mdss_get_lcd_supported_effect(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	ssize_t ret = 0;
+	int i;
+
+	for (i = 0; i < lcd_data.effect_data->supported_effect; i++) {
+		ret += snprintf(buf + ret, PAGE_SIZE, "%s\n", lcd_data.effect_data->effect[i].name);
+	}
+
+	return ret;
+}
+
+static ssize_t mdss_get_lcd_supported_mode(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	ssize_t ret = 0;
+	int i;
+
+	for (i = 0; i < lcd_data.mode_data->supported_mode; i++) {
+		ret += snprintf(buf + ret, PAGE_SIZE, "%s\n", lcd_data.mode_data->mode[i].name);
+	}
+
+	return ret;
+}
+//end for lenovo upgrade M
 static ssize_t mdss_fb_get_dfps_mode(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -757,6 +964,18 @@ static DEVICE_ATTR(idle_time, S_IRUGO | S_IWUSR | S_IWGRP,
 	mdss_fb_get_idle_time, mdss_fb_set_idle_time);
 static DEVICE_ATTR(idle_notify, S_IRUGO, mdss_fb_get_idle_notify, NULL);
 static DEVICE_ATTR(msm_fb_panel_info, S_IRUGO, mdss_fb_get_panel_info, NULL);
+//add for lenovo upgrade M
+static DEVICE_ATTR(lcd_name, S_IRUGO | S_IWUSR | S_IWGRP,  mdss_get_panel_name, NULL);
+static DEVICE_ATTR(ce_onoff, S_IRUGO | S_IWUSR | S_IWGRP, mdss_panel_get_ce, mdss_panel_set_ce);
+static DEVICE_ATTR(cabc_onoff, S_IRUGO | S_IWUSR | S_IWGRP, mdss_panel_get_cabc, mdss_panel_set_cabc);
+static DEVICE_ATTR(dimming_onoff, S_IRUGO | S_IWUSR | S_IWGRP, mdss_panel_get_dimming, mdss_panel_set_dimming);
+static DEVICE_ATTR(lcd_effect, S_IRUGO | S_IWUSR | S_IWGRP, mdss_panel_get_effect, mdss_panel_set_effect);
+static DEVICE_ATTR(lcd_mode, S_IRUGO | S_IWUSR | S_IWGRP, mdss_panel_get_mode, mdss_panel_set_mode);
+static DEVICE_ATTR(lcd_supported_effect, S_IRUGO | S_IWUSR | S_IWGRP, mdss_get_lcd_supported_effect, NULL);
+static DEVICE_ATTR(lcd_supported_mode, S_IRUGO | S_IWUSR | S_IWGRP, mdss_get_lcd_supported_mode, NULL);
+//static DEVICE_ATTR(lcd_test_wakeup, S_IRUGO | S_IWUSR | S_IWGRP, NULL, mdss_lcd_test_wakeup);
+//static DEVICE_ATTR(lcd_led_max_current, S_IRUGO | S_IWUSR | S_IWGRP, NULL, mdss_lcd_led_max_current);
+//end for lenovo upgrade M
 static DEVICE_ATTR(msm_fb_src_split_info, S_IRUGO, mdss_fb_get_src_split_info,
 	NULL);
 static DEVICE_ATTR(msm_fb_thermal_level, S_IRUGO | S_IWUSR,
@@ -769,6 +988,17 @@ static struct attribute *mdss_fb_attrs[] = {
 	&dev_attr_msm_fb_type.attr,
 	&dev_attr_msm_fb_split.attr,
 	&dev_attr_show_blank_event.attr,
+//add for lenovo upgrade M
+	&dev_attr_lcd_name.attr,
+	&dev_attr_ce_onoff.attr,
+	&dev_attr_cabc_onoff.attr,
+	&dev_attr_dimming_onoff.attr,
+	&dev_attr_lcd_supported_effect.attr,
+	&dev_attr_lcd_supported_mode.attr,
+	//&dev_attr_lcd_test_wakeup.attr,
+	&dev_attr_lcd_effect.attr,
+	&dev_attr_lcd_mode.attr,
+//end for lenovo upgrade M
 	&dev_attr_idle_time.attr,
 	&dev_attr_idle_notify.attr,
 	&dev_attr_msm_fb_panel_info.attr,
@@ -928,6 +1158,13 @@ static int mdss_fb_probe(struct platform_device *pdev)
 	/*
 	 * alloc framebuffer info + par data
 	 */
+//add for lenovo upgrade M
+    if(!(( 0 == LCD_ID)||(1== LCD_ID)))
+    {
+        pr_err("no lcd connected=%d\n",LCD_ID);
+		return -ENODEV;
+    }
+//end for lenovo upgrade M    
 	fbi = framebuffer_alloc(sizeof(struct msm_fb_data_type), NULL);
 	if (fbi == NULL) {
 		pr_err("can't allocate framebuffer info data!\n");
@@ -1361,7 +1598,13 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 		 * as well as setting bl_level to bkl_lvl even though the
 		 * backlight has been set to the scaled value.
 		 */
+//add for lenovo upgrade M
+#if 0
 		if (mfd->bl_level_scaled == temp) {
+#else
+        if (mfd->bl_level_scaled == temp  && temp != 0) {		
+#endif
+//end for lenovo upgrade M
 			mfd->bl_level = bkl_lvl;
 		} else {
 			if (mfd->bl_level != bkl_lvl)
@@ -1580,6 +1823,8 @@ static int mdss_fb_blank_unblank(struct msm_fb_data_type *mfd)
 	if (mdss_panel_is_power_off(cur_power_state)) {
 		mutex_lock(&mfd->bl_lock);
 		if (!mfd->bl_updated) {
+//add for lenovo upgrade M
+			mfd->bl_updated = 1;
 			/*
 			 * If in AD calibration mode then frameworks would not
 			 * be allowed to update backlight hence post unblank
@@ -2413,6 +2658,8 @@ static int mdss_fb_open(struct fb_info *info, int user)
 		sysfs_notify(&mfd->fbi->dev->kobj, NULL, "show_blank_event");
 		return -ESHUTDOWN;
 	}
+//add for lenovo upgrade M
+	pr_info("%s: called by %s(%d)\n", __func__, task->comm, pid);
 
 	file_info = kmalloc(sizeof(*file_info), GFP_KERNEL);
 	if (!file_info) {
@@ -2506,8 +2753,12 @@ static int mdss_fb_release_all(struct fb_info *info, bool release_all)
 			pr_warn("mdss_fb_pan_idle for fb%d failed. ret=%d ignoring.\n",
 				mfd->index, ret);
 	}
-
+//modify for lenovo upgrade M
+#if 0
 	pr_debug("release_all = %s\n", release_all ? "true" : "false");
+#else
+	pr_info("%s: release_all = %s, called by %s(%d)\n", __func__, release_all ? "true" : "false", task->comm, pid);
+#endif
 
 	list_for_each_entry_safe(pinfo, temp_pinfo, &mfd->proc_list, list) {
 		if (!release_all && (pinfo->pid != pid))
@@ -3917,7 +4168,51 @@ int __ioctl_transition_dyn_mode_state(struct msm_fb_data_type *mfd,
 	mutex_unlock(&mfd->switch_lock);
 	return 0;
 }
+//add for lenovo upgrade M
+static int mdss_fb_panel_effect(struct msm_fb_data_type *mfd,
+    unsigned long *argp)
+{   
+    int ret, rc;
+    struct hal_panel_ctrl_data data;
+    struct timespec tmp1,tmp2;
+    get_monotonic_boottime (&tmp1);
 
+    ret = copy_from_user(&data, argp,
+        sizeof(data));
+    get_monotonic_boottime (&tmp2);
+    if (((tmp2.tv_sec-tmp1.tv_sec)*1000000000+tmp2.tv_nsec-tmp1.tv_nsec) > 300000000)
+    {
+    	printk ("%s currnt pid  %d name %s \n",__func__,current->pid,current->comm);
+	printk ("%s copy_from_user costs %ld ns \n",__func__,(tmp2.tv_sec-tmp1.tv_sec)*1000000000+tmp2.tv_nsec-tmp1.tv_nsec);
+    }
+    if (ret) {
+        pr_err("%s:copy_from_user failed", __func__);
+        return ret;
+    }
+
+    ret = handle_lcd_effect_data(mfd, &lcd_data, &data);
+    get_monotonic_boottime (&tmp1);
+    if (((tmp1.tv_sec-tmp2.tv_sec)*1000000000+tmp1.tv_nsec-tmp2.tv_nsec) > 300000000)
+    {
+    	printk ("%s currnt pid  %d name %s \n",__func__,current->pid,current->comm);
+	printk ("%s handle_lcd_effect_data costs %ld ns \n",__func__,(tmp1.tv_sec-tmp2.tv_sec)*1000000000+tmp1.tv_nsec-tmp2.tv_nsec);
+    }
+    rc = copy_to_user(argp, &data, sizeof(data));
+    get_monotonic_boottime (&tmp2);
+     if (((tmp2.tv_sec-tmp1.tv_sec)*1000000000+tmp2.tv_nsec-tmp1.tv_nsec) > 300000000)
+    {
+    	printk ("%s currnt pid  %d name %s \n",__func__,current->pid,current->comm);
+	printk ("%s copy_to_user costs %ld ns \n",__func__,(tmp2.tv_sec-tmp1.tv_sec)*1000000000+tmp2.tv_nsec-tmp1.tv_nsec);
+    }
+
+    if (rc) {
+        pr_err("%s:copy_to_user failed", __func__);
+        return rc;
+    }
+
+    return ret;
+}   
+//end for lenovo upgrade M
 /*
  * mdss_fb_do_ioctl() - MDSS Framebuffer ioctl function
  * @info:	pointer to framebuffer info
@@ -4020,7 +4315,11 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 
 		ret = mdss_fb_mode_switch(mfd, dsi_mode);
 		break;
-
+//add for lenovo upgrade M
+    case MSMFB_PANEL_EFFECT:    
+        ret = mdss_fb_panel_effect(mfd, argp);
+        break;
+//end
 	default:
 		if (mfd->mdp.ioctl_handler)
 			ret = mfd->mdp.ioctl_handler(mfd, cmd, argp);

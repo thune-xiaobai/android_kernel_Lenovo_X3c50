@@ -24,13 +24,199 @@
 #include <linux/string.h>
 
 #include "mdss_dsi.h"
-
+//add for lenovo upgrade M
+#include "mdss_otm1906c.h"
+#include "mdss_otm1906c_tm.h"
+//end
 #define DT_CMD_HDR 6
 #define MIN_REFRESH_RATE 30
 #define DEFAULT_MDP_TRANSFER_TIME 14000
 
 DEFINE_LED_TRIGGER(bl_led_trigger);
-
+//add for lenovo upgrade M
+bool bl_for_charge = false;
+u32 sts[]={0x81};
+static int level_front_backup = 0;
+extern int light_flag;
+extern int LCD_ID;
+extern int gesture_flag;
+extern int synaptics_rmi4_sensor_nosleep(bool enable);
+extern void lm36923_set_config(void);
+extern void lm36923_set_dimming(int);
+extern u8 dimming_enabled ;
+extern void lm36923_set_bl(int); 
+static int level_step[118]={
+    1,1,1,1,1,1,1,1,1,1,
+    1,1,2,2,2,2,2,2,2,2,
+    2,2,2,2,2,2,2,2,2,2,
+    2,2,2,2,2,2,2,2,2,2,
+    3,3,3,3,3,3,3,3,3,3,
+    3,3,4,4,4,4,4,4,4,4,
+    4,5,5,5,5,5,5,5,5,6,
+    6,6,6,6,6,7,7,7,7,8,
+    8,8,8,8,8,8,9,9,9,9,
+    9,10,10,10,10,10,10,12,12,12,
+    12,20,20,20,40,40,40,60,60,90,
+    90,120,120,180,180,250,250,300
+};
+static int (*level_new)[256];
+static int level_normal[256]={
+0,17,18,19,20,21,22,23,24,25,
+26,27,28,29,30,31,32,33,34,35,
+36,38,40,42,44,46,48,50,52,54,
+46,58,60,63,66,68,70,72,74,76,
+78,81,84,87,90,93,96,99,102,105,
+108,111,114,117,120,123,126,129,132,135,
+138,144,150,156,162,168,174,180,186,192,
+198,204,210,216,222,228,234,240,246,252,
+258,264,270,276,282,288,294,300,306,312,
+318,324,330,336,342,348,354,360,366,372,
+378,383,388,393,398,403,408,413,418,423,
+428,433,438,443,448,453,458,463,468,473,
+478,483,488,493,498,503,508,513,518,523,
+528,533,538,543,548,553,558,563,568,573,
+578,584,590,596,602,608,614,620,626,632,
+638,644,650,656,662,668,674,680,686,692,
+698,705,712,719,726,733,740,747,754,761,
+768,775,782,789,796,803,810,817,824,831,
+838,848,858,868,878,888,898,908,918,928,
+938,948,958,968,978,988,998,1008,1018,1028,
+1038,1048,1058,1068,1078,1088,1098,1108,1118,1128,
+1138,1148,1158,1168,1178,1188,1198,1208,1218,1228,
+1238,1248,1258,1268,1278,1288,1298,1308,1318,1328,
+1338,1350,1362,1374,1386,1398,1410,1422,1434,1446,
+1458,1470,1482,1494,1506,1518,1530,1542,1554,1566,
+1578,1590,1602,1614,1626,1638,
+};
+static int level_outside[256]={
+0,21,22,23,25,26,27,28,30,31,
+32,33,35,36,37,38,40,41,42,43,
+45,47,50,52,55,57,60,62,65,67,
+70,72,75,77,80,82,85,87,90,92,
+95,98,102,106,110,113,117,121,125,128,
+132,136,140,143,147,151,155,158,162,166,
+172,180,187,195,202,210,217,225,232,240,
+247,255,262,270,277,285,292,300,307,315,
+322,330,337,345,352,360,367,375,382,390,
+397,405,412,420,427,435,442,450,457,465,
+472,478,485,491,497,503,510,516,522,528,
+535,541,547,553,560,566,572,578,585,591,
+597,603,610,616,622,628,635,641,647,653,
+660,666,672,678,685,691,697,703,710,716,
+722,730,737,745,752,760,767,775,782,790,
+797,805,812,820,827,835,842,850,857,865,
+872,881,890,898,907,916,925,933,942,951,
+960,968,977,986,995,1003,1012,1021,1030,1038,
+1047,1060,1072,1085,1097,1110,1122,1135,1147,1160,
+1172,1185,1197,1210,1222,1235,1247,1260,1272,1285,
+1297,1310,1322,1335,1347,1360,1372,1385,1397,1410,
+1422,1435,1447,1460,1472,1485,1497,1510,1522,1535,
+1547,1560,1572,1585,1597,1610,1622,1635,1647,1660,
+1672,1687,1702,1717,1732,1747,1762,1777,1792,1807,
+1822,1837,1852,1867,1882,1897,1912,1927,1942,1957,
+1972,1987,2002,2017,2032,2047,
+};
+static int level_hi_tempreture[256]={
+0,11,11,12,13,13,14,14,15,16,
+16,17,18,18,19,20,20,21,22,22,
+23,24,26,27,28,29,31,32,33,35,
+36,37,39,40,41,42,44,45,46,48,
+49,51,53,55,57,59,61,63,65,66,
+68,70,72,74,76,78,80,82,84,86,
+89,93,97,101,105,109,113,117,120,124,
+128,132,136,140,144,148,152,156,159,163,
+167,171,175,179,183,187,191,195,198,202,
+206,210,214,218,222,226,230,234,237,241,
+245,248,252,255,258,261,265,268,271,274,
+278,281,284,287,291,294,297,300,304,307,
+310,313,317,320,323,326,330,333,336,339,
+343,346,349,352,356,359,362,365,369,372,
+375,379,383,387,391,395,399,403,406,410,
+414,418,422,426,430,434,438,442,445,449,
+453,458,462,467,471,476,481,485,490,494,
+499,503,508,512,517,521,526,531,535,540,
+544,551,557,564,570,577,583,590,596,603,
+609,616,622,629,635,642,648,655,661,668,
+674,681,687,694,700,707,713,720,726,733,
+739,746,752,759,765,772,778,785,791,798,
+804,811,817,824,830,837,843,850,856,863,
+869,877,885,893,900,908,916,924,932,939,
+947,955,963,971,978,986,994,1002,1010,1017,
+1025,1033,1041,1049,1056,1064,
+};
+static unsigned char last_bl_mode = 0;
+//bit 0 normal mode
+//bit 1 tempreture mode
+//bit 2 outside mode
+void backlight_mode_change(int mode)
+{
+    int delta_bl = 0;
+    int count_bl = 0;
+    int i = 0;
+    pr_info("==jinjt==mode=%d %s line=%d\n",mode,__func__,__LINE__);
+    if((mode&0x04) == 4)//high priority
+    {
+        level_new = &level_outside;
+        last_bl_mode = 2;
+    }
+    else if((mode&0x02) == 2)//mid priority
+    {
+        if(last_bl_mode == 0)//change hi tempreture bl mode from outside mode slowly
+        {
+            if( level_front_backup == 0){
+                level_new = &level_hi_tempreture;
+                last_bl_mode = 1;
+		return;
+	    }
+            /*level_new = &level_hi_tempreture;*/
+            delta_bl=level_normal[level_front_backup]-level_hi_tempreture[level_front_backup];
+            pr_info("%s delta_bl = %d normal mode ---------------> high tempreture \n",__func__,delta_bl);
+            count_bl = 0;
+            for(i=0;count_bl<delta_bl;i++)
+            {
+                count_bl = count_bl + level_step[i];
+                /*pr_info("count_bl=%d\n",count_bl);*/
+                /*pr_info("%s level_normal[level_front_backup] = %d  level_step[%d]=%d\n",__func__,level_normal[level_front_backup],i,level_step[i]);*/
+                lm36923_set_bl(level_normal[level_front_backup]-count_bl);
+                msleep(2);
+            }
+            last_bl_mode = 1;
+            return;
+        }
+        else//change hi tempreture bl mode from outside mode
+        {
+            level_new = &level_hi_tempreture;
+            last_bl_mode = 1;
+        }
+    }
+    else//low priority
+    {
+        if(last_bl_mode == 1)//change normal bl mode from hi tempreture mode slowly
+        {
+            /*level_new = &level_hi_tempreture;*/
+            delta_bl=level_normal[level_front_backup]-level_hi_tempreture[level_front_backup];
+            pr_info("%s delta_bl = %d high tempreture ---------------> normal mode \n",__func__,delta_bl);
+            count_bl = 0;
+            for(i=0;count_bl<delta_bl;i++)
+            {
+                count_bl = count_bl + level_step[i];
+                /*pr_info("count_bl=%d\n",count_bl);*/
+                /*pr_info("%s level_normal[level_front_backup] = %d  level_step[%d]=%d\n",__func__,level_normal[level_front_backup],i,level_step[i]);*/
+                lm36923_set_bl(level_hi_tempreture[level_front_backup]+count_bl);
+                msleep(2);
+            }
+            last_bl_mode = 0;
+            return;
+        }
+        else//change normal bl mode from outside mode
+        {
+            level_new = &level_normal;
+            last_bl_mode = 0;
+        }
+    }
+	lm36923_set_bl((*level_new)[level_front_backup]);
+}
+//end for lenovo upgrade M
 void mdss_dsi_panel_pwm_cfg(struct mdss_dsi_ctrl_pdata *ctrl)
 {
 	if (ctrl->pwm_pmi)
@@ -169,38 +355,151 @@ static void mdss_dsi_panel_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl,
 
 	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
 }
-
-static char led_pwm1[2] = {0x51, 0x0};	/* DTYPE_DCS_WRITE1 */
-static struct dsi_cmd_desc backlight_cmd = {
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm1)},
-	led_pwm1
+//modify for lenovo upgrade M
+static char led_pwm00[2] = {0x0, 0x0};	/* DTYPE_DCS_WRITE1 */
+static struct dsi_cmd_desc test00_cmd[] = {
+    {{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm00)},led_pwm00},
 };
-
-static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
+void mdss_dsi_panel_00_dcs(struct mdss_dsi_ctrl_pdata *ctrl)
 {
 	struct dcs_cmd_req cmdreq;
 	struct mdss_panel_info *pinfo;
-
 	pinfo = &(ctrl->panel_data.panel_info);
 	if (pinfo->dcs_cmd_by_left) {
 		if (ctrl->ndx != DSI_CTRL_LEFT)
 			return;
 	}
 
-	pr_debug("%s: level=%d\n", __func__, level);
-
-	led_pwm1[1] = (unsigned char)level;
-
 	memset(&cmdreq, 0, sizeof(cmdreq));
-	cmdreq.cmds = &backlight_cmd;
+	cmdreq.cmds = test00_cmd;
 	cmdreq.cmds_cnt = 1;
 	cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
 	cmdreq.rlen = 0;
 	cmdreq.cb = NULL;
 
-	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+    mdss_dsi_cmdlist_put(ctrl, &cmdreq);
 }
+static char led_pwm1[2] = {0x51, 0xff};	/* DTYPE_DCS_WRITE1 */
+static char led_pwm3[2] = {0x53, 0x24};	/* DTYPE_DCS_WRITE1 */
+static char led_pwm2[3] = {0x99, 0x0,0x0};	/* DTYPE_DCS_WRITE1 */
+static char led_pwm0[3] = {0x99, 0x95,0x27};	/* DTYPE_DCS_WRITE1 */
+static struct dsi_cmd_desc backlight_cmd[] = {
+    {{0x29, 1, 0, 0, 1, sizeof(led_pwm0)},led_pwm0},
+    {{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm1)},led_pwm1},
+    {{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm3)},led_pwm3},
+    {{0x29, 1, 0, 0, 1, sizeof(led_pwm2)},led_pwm2},
+};
+static char led_pwm10[2] = {0x51, 0x00};	/* DTYPE_DCS_WRITE1 */
+static char led_pwm11[2] = {0x53, 0x2c};	/* DTYPE_DCS_WRITE1 */
+static struct dsi_cmd_desc backlightoff_cmd[] = {
+    {{0x29, 1, 0, 0, 1, sizeof(led_pwm0)},led_pwm0},
+    {{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm11)},led_pwm11},
+    {{DTYPE_DCS_WRITE1, 1, 0, 0, 0x55, sizeof(led_pwm10)},led_pwm10},
+    {{0x29, 1, 0, 0, 1, sizeof(led_pwm2)},led_pwm2},
+};
 
+struct delayed_work dimming_enabled_work;
+static u8 is_dimming_enabled = 0;
+int  dimming_enable_count_for_set_bl = 0; 
+static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
+{
+	struct dcs_cmd_req cmdreq;
+	struct mdss_panel_info *pinfo;
+    static int level_backup = 0;
+    static int resume_flag = 0;
+	static u8 dimming_enable_count = 0;
+	pinfo = &(ctrl->panel_data.panel_info);
+	if (pinfo->dcs_cmd_by_left) {
+		if (ctrl->ndx != DSI_CTRL_LEFT)
+			return;
+	}
+
+	pr_info("%s: level=%d new level=%d\n", __func__, level,(*level_new)[level]);
+/* zhujp2 add 0824*/
+    if (level==0){
+	   light_flag = 0;
+	}
+	else{
+	   light_flag = 1;
+    }
+/* zhujp2 add 0824*/
+    if(level_backup == 0&& level !=0)
+    {
+        msleep(16);
+        memset(&cmdreq, 0, sizeof(cmdreq));
+        cmdreq.cmds = backlight_cmd;
+        cmdreq.cmds_cnt = 4;
+        cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
+        cmdreq.rlen = 0;
+        cmdreq.cb = NULL;
+        mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+    }
+    if(level_backup != 0 && level != 0 && resume_flag==0)
+    {
+      //  lm36923_set_dimming(1);
+        resume_flag = 1;
+    }
+    if(level == 0)
+    {
+        resume_flag = 0;
+		dimming_enable_count = 0;
+		is_dimming_enabled = 0;
+        if(level_backup !=0)
+        {
+            memset(&cmdreq, 0, sizeof(cmdreq));
+            cmdreq.cmds = backlightoff_cmd;
+            cmdreq.cmds_cnt = 4;
+            cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
+            cmdreq.rlen = 0;
+            cmdreq.cb = NULL;
+            mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+        }
+    }else if(dimming_enable_count < 3)
+		dimming_enable_count++;
+	dimming_enable_count_for_set_bl = dimming_enable_count;
+	/*
+	//after level=0,dimming will be disabled default,so don't turn it on
+	
+	if(dimming_enabled != is_dimming_enabled && level != 0 && dimming_enable_count > 1)
+	{
+		is_dimming_enabled = dimming_enabled;
+		//sleep 1500ms for the first blk setting after resume to avoid
+		//the dimming issue 
+		if(dimming_enable_count == 2 && level_backup < (*level_new)[level])
+			schedule_delayed_work(&dimming_enabled_work,
+				round_jiffies_relative(msecs_to_jiffies(1000)));
+		else
+		{
+			//make sure the first backlight can stay longer than 100ms
+			if(dimming_enable_count == 2)
+				msleep(100);
+			lm36923_set_dimming(dimming_enabled);
+		}
+		dimming_enable_count = 0xFF;
+	}*/
+	//dimming_enable_count = 0xFF;
+	lm36923_set_bl((*level_new)[level]);
+	/*
+	if(level==0)
+	{
+		cancel_delayed_work_sync(&dimming_enabled_work);
+	}*/
+    level_backup = (*level_new)[level];
+    level_front_backup = level;
+#if 0
+	led_pwm1[1] = (unsigned char)level;
+
+	memset(&cmdreq, 0, sizeof(cmdreq));
+	cmdreq.cmds = backlight_cmd;
+	cmdreq.cmds_cnt = 3;
+	cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
+	cmdreq.rlen = 0;
+	cmdreq.cb = NULL;
+
+    mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+#endif
+}
+//end modify for lenovo upgrade M
 static int mdss_dsi_request_gpios(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 {
 	int rc = 0;
@@ -229,6 +528,16 @@ static int mdss_dsi_request_gpios(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 			goto bklt_en_gpio_err;
 		}
 	}
+//add for lenovo upgrade M
+    if (gpio_is_valid(ctrl_pdata->bladj_en_gpio)) {
+		rc = gpio_request(ctrl_pdata->bladj_en_gpio,"bladj_enable");
+		if (rc) {
+			pr_err("==jinjt==request bladj gpio failed, rc=%d\n",
+				       rc);
+			goto bladj_en_gpio_err;
+		}
+    }
+//end for lenovo upgrade M	
 	if (gpio_is_valid(ctrl_pdata->mode_gpio)) {
 		rc = gpio_request(ctrl_pdata->mode_gpio, "panel_mode");
 		if (rc) {
@@ -240,6 +549,11 @@ static int mdss_dsi_request_gpios(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 	return rc;
 
 mode_gpio_err:
+//add for lenovo upgrade M
+	if (gpio_is_valid(ctrl_pdata->bladj_en_gpio))
+		gpio_free(ctrl_pdata->bladj_en_gpio);
+bladj_en_gpio_err:
+//end for lenovo upgrade M
 	if (gpio_is_valid(ctrl_pdata->bklt_en_gpio))
 		gpio_free(ctrl_pdata->bklt_en_gpio);
 bklt_en_gpio_err:
@@ -265,41 +579,52 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	if (!gpio_is_valid(ctrl_pdata->disp_en_gpio)) {
-		pr_debug("%s:%d, reset line not configured\n",
-			   __func__, __LINE__);
-	}
+	/*if (!gpio_is_valid(ctrl_pdata->disp_en_gpio)) {*/
+		/*pr_info("%s:%d, reset line not configured\n",*/
+			   /*__func__, __LINE__);*/
+	/*}*/
 
 	if (!gpio_is_valid(ctrl_pdata->rst_gpio)) {
-		pr_debug("%s:%d, reset line not configured\n",
+		pr_info("%s:%d, reset line not configured\n",
 			   __func__, __LINE__);
 		return rc;
 	}
 
-	pr_debug("%s: enable = %d\n", __func__, enable);
+	pr_info("%s: enable = %d\n", __func__, enable);
 	pinfo = &(ctrl_pdata->panel_data.panel_info);
-
+//modify for lenovo upgrade M
 	if (enable) {
-		rc = mdss_dsi_request_gpios(ctrl_pdata);
-		if (rc) {
-			pr_err("gpio request failed\n");
-			return rc;
-		}
+        if(gesture_flag != 1)
+        {
+            rc = mdss_dsi_request_gpios(ctrl_pdata);
+            if (rc) {
+                pr_err("gpio request failed\n");
+                return rc;
+            }
+        }
 		if (!pinfo->cont_splash_enabled) {
-			if (gpio_is_valid(ctrl_pdata->disp_en_gpio))
-				gpio_set_value((ctrl_pdata->disp_en_gpio), 1);
-
-			for (i = 0; i < pdata->panel_info.rst_seq_len; ++i) {
-				gpio_set_value((ctrl_pdata->rst_gpio),
-					pdata->panel_info.rst_seq[i]);
-				if (pdata->panel_info.rst_seq[++i])
-					usleep(pinfo->rst_seq[i] * 1000);
-			}
-
-			if (gpio_is_valid(ctrl_pdata->bklt_en_gpio))
-				gpio_set_value((ctrl_pdata->bklt_en_gpio), 1);
+			/*if (gpio_is_valid(ctrl_pdata->disp_en_gpio))*/
+				/*gpio_set_value((ctrl_pdata->disp_en_gpio), 1);*/
+            if(gesture_flag != 1)
+            {
+                for (i = 0; i < pdata->panel_info.rst_seq_len; ++i) {
+                    gpio_set_value((ctrl_pdata->rst_gpio),
+                        pdata->panel_info.rst_seq[i]);
+                    if (pdata->panel_info.rst_seq[++i])
+                        usleep(pinfo->rst_seq[i] * 1000);
+                }
+            }
+            else 
+            {
+				
+                gpio_set_value(980,0);
+                gpio_set_value((ctrl_pdata->rst_gpio),0);
+                msleep(5);
+                gpio_set_value(980,1);
+                gpio_set_value((ctrl_pdata->rst_gpio),1);
+            }
 		}
-
+//end modify for lenovo upgrade M
 		if (gpio_is_valid(ctrl_pdata->mode_gpio)) {
 			if (pinfo->mode_gpio_state == MODE_GPIO_HIGH)
 				gpio_set_value((ctrl_pdata->mode_gpio), 1);
@@ -313,18 +638,19 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 			pr_debug("%s: Reset panel done\n", __func__);
 		}
 	} else {
-		if (gpio_is_valid(ctrl_pdata->bklt_en_gpio)) {
-			gpio_set_value((ctrl_pdata->bklt_en_gpio), 0);
-			gpio_free(ctrl_pdata->bklt_en_gpio);
-		}
-		if (gpio_is_valid(ctrl_pdata->disp_en_gpio)) {
-			gpio_set_value((ctrl_pdata->disp_en_gpio), 0);
-			gpio_free(ctrl_pdata->disp_en_gpio);
-		}
-		gpio_set_value((ctrl_pdata->rst_gpio), 0);
-		gpio_free(ctrl_pdata->rst_gpio);
-		if (gpio_is_valid(ctrl_pdata->mode_gpio))
-			gpio_free(ctrl_pdata->mode_gpio);
+//modify for lenovo upgrade M
+        if(gesture_flag !=1)
+        {
+            if (gpio_is_valid(ctrl_pdata->disp_en_gpio)) {
+                gpio_set_value((ctrl_pdata->disp_en_gpio), 0);
+                gpio_free(ctrl_pdata->disp_en_gpio);
+            }
+            gpio_set_value((ctrl_pdata->rst_gpio), 0);
+            gpio_free(ctrl_pdata->rst_gpio);
+            if (gpio_is_valid(ctrl_pdata->mode_gpio))
+                gpio_free(ctrl_pdata->mode_gpio);
+        }
+//end modif for lenovo upgrade M
 	}
 	return rc;
 }
@@ -591,6 +917,8 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 
 	if ((bl_level < pdata->panel_info.bl_min) && (bl_level != 0))
 		bl_level = pdata->panel_info.bl_min;
+	
+	//pr_info("%s: bl_level=%d, ctrl_pdata->bklt_ctrl=%d\n", __func__, bl_level, ctrl_pdata->bklt_ctrl);
 
 	switch (ctrl_pdata->bklt_ctrl) {
 	case BL_WLED:
@@ -628,6 +956,12 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 			__func__);
 		break;
 	}
+/*Maxina save bl_level for charge */
+	if(bl_level  == 0)
+		bl_for_charge = false;
+	else
+		bl_for_charge = true;
+/******Save end*******/
 }
 
 static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
@@ -635,6 +969,7 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
 	struct mdss_panel_info *pinfo;
 	struct dsi_panel_cmds *on_cmds;
+	static int panel_on_count = 0;
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -645,7 +980,7 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
+	pr_info("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
 	if (pinfo->dcs_cmd_by_left) {
 		if (ctrl->ndx != DSI_CTRL_LEFT)
@@ -659,11 +994,23 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 		on_cmds = &ctrl->post_dms_on_cmds;
 
 	if (on_cmds->cmd_cnt)
-		mdss_dsi_panel_cmds_send(ctrl, on_cmds, CMD_REQ_COMMIT);
-
+//modify for lenovo upgrade M
+		//mdss_dsi_panel_cmds_send(ctrl, on_cmds);
+		update_init_code(ctrl, &lcd_data, mdss_dsi_panel_cmds_send);
+			if (gpio_is_valid(ctrl->bklt_en_gpio))
+            {
+				gpio_set_value((ctrl->bklt_en_gpio), 1);
+                msleep(5);
+                lm36923_set_config();
+            }
+			if (gpio_is_valid(ctrl->bladj_en_gpio))
+            {
+				gpio_set_value((ctrl->bladj_en_gpio), 0);
+            }
+//end modify for lenovo upgrade M
 end:
 	pinfo->blank_state = MDSS_PANEL_BLANK_UNBLANK;
-	pr_debug("%s:-\n", __func__);
+	pr_info("%s:-, count = %d\n", __func__, panel_on_count++);
 	return 0;
 }
 
@@ -681,7 +1028,7 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
+	pr_info("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
 	if (pinfo->dcs_cmd_by_left) {
 		if (ctrl->ndx != DSI_CTRL_LEFT)
@@ -690,10 +1037,19 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 
 	if (ctrl->off_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->off_cmds, CMD_REQ_COMMIT);
-
+//add for lenovo upgrade M
+		if (gpio_is_valid(ctrl->bklt_en_gpio)) {
+			gpio_set_value((ctrl->bklt_en_gpio), 0);
+			gpio_free(ctrl->bklt_en_gpio);
+		}
+		if (gpio_is_valid(ctrl->bladj_en_gpio)) {
+			gpio_set_value((ctrl->bladj_en_gpio), 1);
+			gpio_free(ctrl->bladj_en_gpio);
+		}
+//end for lenovo upgrade M
 end:
 	pinfo->blank_state = MDSS_PANEL_BLANK_BLANK;
-	pr_debug("%s:-\n", __func__);
+	pr_info("%s:-\n", __func__);
 	return 0;
 }
 
@@ -1070,14 +1426,23 @@ static int mdss_dsi_parse_reset_seq(struct device_node *np,
 
 static int mdss_dsi_gen_read_status(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 {
+//modify for lenovo upgrade M
 	if (!mdss_dsi_cmp_panel_reg(ctrl_pdata->status_buf,
-		ctrl_pdata->status_value, 0)) {
+		ctrl_pdata->status_value, 0)&&!mdss_dsi_cmp_panel_reg(ctrl_pdata->status_buf,sts,0)) {
 		pr_err("%s: Read back value from panel is incorrect\n",
 							__func__);
 		return -EINVAL;
 	} else {
-		return 1;
+        if (!mdss_dsi_cmp_panel_reg(ctrl_pdata->status_buf2,
+                ctrl_pdata->status_value2, 0)) {
+            pr_err("%s: Read back value from panel is incorrect\n",
+                __func__);
+            return -EINVAL;
+        }
+        else
+            return 1;
 	}
+//end for lenovo upgrade M
 }
 
 static int mdss_dsi_nt35596_read_status(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
@@ -1258,7 +1623,34 @@ static void mdss_dsi_parse_esd_params(struct device_node *np,
 			memset(ctrl->status_value, 0, ctrl->status_cmds_rlen);
 		}
 	}
-
+//jinjt add for reading second register from driver ic for esd
+    mdss_dsi_parse_dcs_cmds(np, &ctrl->status_cmds2,
+            "qcom,mdss-dsi-panel-status-command2",
+                "qcom,mdss-dsi-panel-status-command-state");
+	ctrl->status_value2 = kzalloc(sizeof(u32) * ctrl->status_cmds_rlen,
+				GFP_KERNEL);
+	if (!ctrl->status_value2) {
+		pr_err("%s: Error allocating memory for status buffer\n",
+			__func__);
+		pinfo->esd_check_enabled = false;
+		return;
+	}
+    data = of_find_property(np, "qcom,mdss-dsi-panel-status-value2", &tmp);
+    tmp /= sizeof(u32);
+    if (!data || (tmp != ctrl->status_cmds_rlen)) {
+        pr_debug("%s: Panel status values not found\n", __func__);
+        memset(ctrl->status_value2, 0, ctrl->status_cmds_rlen);
+    } else {
+        rc = of_property_read_u32_array(np,
+            "qcom,mdss-dsi-panel-status-value2",
+            ctrl->status_value2, tmp);
+        if (rc) {
+            pr_debug("%s: Error reading panel status values\n",
+                    __func__);
+            memset(ctrl->status_value2, 0, ctrl->status_cmds_rlen);
+        }
+    }
+//end
 	ctrl->status_mode = ESD_MAX;
 	rc = of_property_read_string(np,
 			"qcom,mdss-dsi-panel-status-check-mode", &string);
@@ -1531,7 +1923,19 @@ static int mdss_dsi_panel_timing_from_dt(struct device_node *np,
 	u32 tmp;
 	int rc, i, len;
 	const char *data;
-
+//add for lenovo upgrade M
+    if(LCD_ID == 0){
+        printk("set otm1906c lcd_data\n");
+        lcd_data.effect_data = &otm1906c_effect_data;
+        lcd_data.mode_data = &otm1906c_mode_data;
+        lcd_data.mode = &otm1906c_mode[2];
+    }else{
+        printk("set tianma otm1906c lcd_data\n");
+        lcd_data.effect_data = &otm1906c_tm_effect_data;
+        lcd_data.mode_data = &otm1906c_tm_mode_data;
+        lcd_data.mode = &otm1906c_tm_mode[2];
+    }
+//end for lenovo upgrade M
 	rc = of_property_read_u32(np, "qcom,mdss-dsi-panel-width", &tmp);
 	if (rc) {
 		pr_err("%s:%d, panel width not specified\n",
@@ -1950,7 +2354,19 @@ static int mdss_panel_parse_dt(struct device_node *np,
 
 	mdss_dsi_parse_reset_seq(np, pinfo->rst_seq, &(pinfo->rst_seq_len),
 		"qcom,mdss-dsi-reset-sequence");
-
+//add for lenovo upgrade M
+	rc = mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->on_cmds,
+		"qcom,mdss-dsi-on-command", "qcom,mdss-dsi-on-command-state");
+	if (!rc) {
+		lcd_data.save_cmd.cmd = ctrl_pdata->on_cmds.cmds;
+		lcd_data.save_cmd.cnt = ctrl_pdata->on_cmds.cmd_cnt;
+		printk("%s init code cnt: %d\n", __func__, lcd_data.save_cmd.cnt);
+		rc = malloc_lcd_effect_code_buf(&lcd_data);
+		if (rc) {
+			printk("malloc_lcd_effect_code_buf failure\n");
+		}
+	}
+//end for lenovo upgrade M
 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->off_cmds,
 		"qcom,mdss-dsi-off-command", "qcom,mdss-dsi-off-command-state");
 
@@ -1972,7 +2388,12 @@ static int mdss_panel_parse_dt(struct device_node *np,
 error:
 	return -EINVAL;
 }
-
+//add for lenvo upgrade M
+static void dimming_enabled_work_func(struct work_struct *work)
+{
+	lm36923_set_dimming(is_dimming_enabled);
+}
+//end
 int mdss_dsi_panel_init(struct device_node *node,
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata,
 	bool cmd_cfg_cont_splash)
@@ -2018,6 +2439,11 @@ int mdss_dsi_panel_init(struct device_node *node,
 	ctrl_pdata->low_power_config = mdss_dsi_panel_low_power_config;
 	ctrl_pdata->panel_data.set_backlight = mdss_dsi_panel_bl_ctrl;
 	ctrl_pdata->switch_mode = mdss_dsi_panel_switch_mode;
-
+//add for lenovo upgrade M
+	INIT_DELAYED_WORK(&dimming_enabled_work,
+			dimming_enabled_work_func);
+//jinjt add default backlight matrix
+    level_new = &level_normal;
+//end for lenovo upgrade M
 	return 0;
 }

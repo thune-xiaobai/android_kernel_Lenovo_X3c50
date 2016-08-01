@@ -1846,6 +1846,7 @@ void dm_interface_exit(void)
 	if (misc_deregister(&_dm_misc) < 0)
 		DMERR("misc_deregister failed for control device");
 
+	DMINFO(" deregister: %s", DM_DRIVER_EMAIL);
 	dm_hash_exit();
 }
 

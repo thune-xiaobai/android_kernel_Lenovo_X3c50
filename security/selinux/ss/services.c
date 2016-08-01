@@ -1980,6 +1980,45 @@ static void security_load_policycaps(void)
 						  POLICYDB_CAPABILITY_OPENPERM);
 }
 
+//this is just used in factory testmode
+extern int is_testmode;
+static int security_force_testmode_domain_permissive(int force)
+{
+	int rc=0;
+	char *testmode_scontext="u:r:testmode:s0";
+	int len;
+	u32 sid;
+	struct context *context;
+
+	if (!is_testmode)
+		return 0;
+
+	len = strlen(testmode_scontext);
+	rc = security_context_to_sid(testmode_scontext,len,&sid);
+	if (rc)
+		return rc;
+
+	pr_debug("%s:force %d,begin sid=%d\n",__func__,force,sid);
+	context = sidtab_search_force(&sidtab,sid);
+	if (context) {
+		pr_debug("%s:find context user=%d role=%d type=%d\n",__func__,context->user,context->role,context->type);
+		if ( ebitmap_get_bit(&policydb.permissive_map,context->type) ) {
+			pr_debug("%s:testmode domain is permissive\n",__func__);
+			if (!force) {
+				ebitmap_set_bit(&policydb.permissive_map,context->type,0);
+				pr_debug("%s:org 1 force 0,set\n",__func__);
+			}
+		}
+		else if ( force ) {
+			ebitmap_set_bit(&policydb.permissive_map,context->type,1);
+			pr_debug("%s:org 0 force 1,set\n",__func__);
+		}
+
+	}
+	pr_debug("%s:force %d,over\n",__func__,force);
+	return 0;
+}
+
 static int security_preserve_bools(struct policydb *p);
 
 /**
@@ -2037,6 +2076,10 @@ int security_load_policy(void *data, size_t len)
 		selinux_status_update_policyload(seqno);
 		selinux_netlbl_cache_invalidate();
 		selinux_xfrm_notify_policyload();
+
+		//set testmode domain permissive only in testmode
+		if (is_testmode)
+			security_force_testmode_domain_permissive(1);
 		return 0;
 	}
 
@@ -3403,9 +3446,14 @@ int security_read_policy(void **data, size_t *len)
 	fp.data = *data;
 	fp.len = *len;
 
+	//set testmode domain permissive only in testmode
+	if (is_testmode)
+		security_force_testmode_domain_permissive(0);
 	read_lock(&policy_rwlock);
 	rc = policydb_write(&policydb, &fp);
 	read_unlock(&policy_rwlock);
+	if (is_testmode)
+		security_force_testmode_domain_permissive(1);
 
 	if (rc)
 		return rc;

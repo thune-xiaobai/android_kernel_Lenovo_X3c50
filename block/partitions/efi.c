@@ -100,6 +100,9 @@
 #include "check.h"
 #include "efi.h"
 
+#undef pr_debug
+#define pr_debug pr_info
+
 /* This allows a kernel command line option 'gpt' to override
  * the test for invalid PMBR.  Not __initdata because reloading
  * the partition tables happens after init too.

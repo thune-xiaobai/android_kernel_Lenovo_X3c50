@@ -32,9 +32,9 @@
 #include <soc/qcom/restart.h>
 #include <soc/qcom/watchdog.h>
 
-#define EMERGENCY_DLOAD_MAGIC1    0x322A4F99
-#define EMERGENCY_DLOAD_MAGIC2    0xC67E4350
-#define EMERGENCY_DLOAD_MAGIC3    0x77777777
+#define EMERGENCY_DLOAD_MAGIC1    0x188D442F
+#define EMERGENCY_DLOAD_MAGIC2    0x06D73E09
+#define EMERGENCY_DLOAD_MAGIC3    0x88888888
 
 #define SCM_IO_DISABLE_PMIC_ARBITER	1
 #define SCM_IO_DEASSERT_PS_HOLD		2
@@ -148,6 +148,34 @@ static void enable_emergency_dload_mode(void)
 		pr_err("Failed to set secure EDLOAD mode: %d\n", ret);
 }
 
+static int emergent_restart;
+extern int qpnp_pon_set_emergent_restart_mode(void);
+static int emergent_restart_set(const char *val, struct kernel_param *kp)
+{
+	int ret;
+	int old_val = emergent_restart;
+
+	/* it has been set the emergent_restart mode */
+	if (emergent_restart)
+		return 0;
+
+	ret = param_set_int(val, kp);
+	if (ret)
+		return ret;
+	/* If emergent_restart is not zero or one, ignore. */
+	if (emergent_restart >> 1) {
+		emergent_restart = old_val;
+		return -EINVAL;
+	}
+
+	qpnp_pon_set_emergent_restart_mode();
+
+	return 0;
+}
+
+module_param_call(emergent_restart, emergent_restart_set, param_get_int,
+		&emergent_restart, 0644);
+
 static int dload_set(const char *val, struct kernel_param *kp)
 {
 	int ret;
@@ -212,6 +240,7 @@ static void halt_spmi_pmic_arbiter(void)
 	}
 }
 
+extern void mrd_unset_miniramdump(void);
 static void msm_restart_prepare(const char *cmd)
 {
 	bool need_warm_reset = false;
@@ -227,6 +256,13 @@ static void msm_restart_prepare(const char *cmd)
 			(in_panic || restart_mode == RESTART_DLOAD));
 #endif
 
+	pr_err("restart:restart_mode=%d,in_panic=%d,download_mode=%d\n",restart_mode,in_panic,download_mode);
+#ifdef CONFIG_LENOVO_DEBUG_MRD
+	//unset mrd feature
+	if (restart_mode == RESTART_DLOAD) {
+		mrd_unset_miniramdump();
+	}
+#endif
 	need_warm_reset = (get_dload_mode() ||
 				(cmd != NULL && cmd[0] != '\0'));
 
@@ -241,6 +277,7 @@ static void msm_restart_prepare(const char *cmd)
 			strcmp(cmd, "rtc") &&
 			strcmp(cmd, "dm-verity device corrupted") &&
 			strcmp(cmd, "dm-verity enforcing") &&
+			strcmp(cmd, "testmode") &&
 			strcmp(cmd, "keys clear")))
 			need_warm_reset = true;
 	}
@@ -271,6 +308,16 @@ static void msm_restart_prepare(const char *cmd)
 			__raw_writel(0x77665509, restart_reason);
 		} else if (!strcmp(cmd, "keys clear")) {
 			__raw_writel(0x7766550a, restart_reason);
+                } else if (!strncmp(cmd, "testmode", 8)) {
+                    qpnp_pon_set_restart_reason(
+                        PON_RESTART_REASON_TESTMODE);
+                    __raw_writel(0x77665504, restart_reason);
+                } else if (!strncmp(cmd, "dloadmode", 9)) {
+                       set_dload_mode(1);
+#ifdef CONFIG_LENOVO_DEBUG_MRD
+			//unset mrd feature
+			mrd_unset_miniramdump();
+#endif
 		} else if (!strncmp(cmd, "oem-", 4)) {
 			unsigned long code;
 			int ret;
@@ -389,6 +436,47 @@ static void do_msm_poweroff(void)
 	return;
 }
 
+#define FIX_IMEM_CONT_REBOOT_COUNT_ADDR 0x38
+int imem_read(int offset)
+{
+	int val=0;
+	void* imem_addr;
+	if (dload_mode_addr) {
+		imem_addr = dload_mode_addr + offset;
+		pr_debug("%s: MSM_IMEM_BASE=%p,offset=0x%x, imem_addr=%p\n",__func__,dload_mode_addr,offset,imem_addr);
+		val=__raw_readl(imem_addr);
+		mb();
+		return val;
+	} else
+		printk("%s:error,can not get the imem base address.\n",__func__);
+
+
+	return 0;
+}
+
+void imem_write(int offset,unsigned int val)
+{
+	void* imem_addr;
+	if (dload_mode_addr) {
+		imem_addr = dload_mode_addr + offset;
+		pr_debug("%s: MSM_IMEM_BASE=%p,offset=0x%x, imem_addr=%p,val=0x%x\n",__func__,dload_mode_addr,offset,imem_addr,val);
+		__raw_writel(val, imem_addr);
+		mb();
+	} else
+		printk("%s:error,can not get the imem base address.\n",__func__);
+
+}
+
+static void imem_init(void)
+{
+	unsigned int old_val,val;
+	old_val=(unsigned int)imem_read(FIX_IMEM_CONT_REBOOT_COUNT_ADDR);
+	val = old_val;
+	val++;
+	imem_write(FIX_IMEM_CONT_REBOOT_COUNT_ADDR , val);
+	printk("imem offset 0x%x value 0x%x,write back 0x%x\n",FIX_IMEM_CONT_REBOOT_COUNT_ADDR,old_val,val);
+}
+
 static int msm_restart_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -453,6 +541,7 @@ static int msm_restart_probe(struct platform_device *pdev)
 
 	set_dload_mode(download_mode);
 
+	imem_init();
 	return 0;
 
 err_restart_reason:

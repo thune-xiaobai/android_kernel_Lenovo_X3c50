@@ -349,6 +349,8 @@ struct mdss_dsi_ctrl_pdata {
 	int rst_gpio;
 	int disp_en_gpio;
 	int bklt_en_gpio;
+//add for lenovo upgrade M
+	int bladj_en_gpio;
 	int mode_gpio;
 	int bklt_ctrl;	/* backlight ctrl */
 	bool pwm_pmi;
@@ -383,8 +385,12 @@ struct mdss_dsi_ctrl_pdata {
 	struct dsi_panel_cmds post_dms_on_cmds;
 	struct dsi_panel_cmds off_cmds;
 	struct dsi_panel_cmds status_cmds;
+//add for lenovo upgrade M
+	struct dsi_panel_cmds status_cmds2;
 	u32 status_cmds_rlen;
 	u32 *status_value;
+//add for lenovo upgrade M
+	u32 *status_value2;
 	u32 status_error_count;
 	u32 max_status_error_count;
 
@@ -404,6 +410,7 @@ struct mdss_dsi_ctrl_pdata {
 	struct mutex cmd_mutex;
 	struct regulator *lab; /* vreg handle */
 	struct regulator *ibb; /* vreg handle */
+    struct mutex cmdlist_mutex;
 	struct mutex clk_lane_mutex;
 
 	u32 ulps_clamp_ctrl_off;
@@ -412,10 +419,13 @@ struct mdss_dsi_ctrl_pdata {
 	bool core_power;
 	bool mmss_clamp;
 	bool timing_db_mode;
+	bool burst_mode_enabled;
 
 	struct dsi_buf tx_buf;
 	struct dsi_buf rx_buf;
 	struct dsi_buf status_buf;
+//add for lenovo upgrade M
+	struct dsi_buf status_buf2;
 	int status_mode;
 	int rx_len;
 

@@ -17,6 +17,15 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 
+#define SCHUMY_EDIT
+
+#ifdef SCHUMY_EDIT
+#define SLOT_GPIO_CARD_DETECTION_DEBOUNCE_TIMEOUT_IN    (500)
+#define SLOT_GPIO_CARD_DETECTION_DEBOUNCE_TIMEOUT_OUT   (200)
+#define SLOT_GPIO_CARD_DETECTION_STATUS_IN              (1)
+#define SLOT_GPIO_CARD_DETECTION_STATUS_OUT             (0)
+#endif
+
 struct mmc_gpio {
 	int ro_gpio;
 	int cd_gpio;
@@ -70,7 +79,16 @@ static irqreturn_t mmc_gpio_cd_irqt(int irq, void *dev_id)
 		ctx->status = status;
 
 		/* Schedule a card detection after a debounce timeout */
+#ifdef SCHUMY_EDIT
+        if(SLOT_GPIO_CARD_DETECTION_DEBOUNCE_TIMEOUT_IN == status) {
+		mmc_detect_change(host, msecs_to_jiffies(SLOT_GPIO_CARD_DETECTION_DEBOUNCE_TIMEOUT_IN));
+        }
+        else {
+		mmc_detect_change(host, msecs_to_jiffies(SLOT_GPIO_CARD_DETECTION_DEBOUNCE_TIMEOUT_OUT));
+        }
+#else
 		mmc_detect_change(host, msecs_to_jiffies(200));
+#endif
 	}
 out:
 
